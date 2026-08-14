@@ -1,0 +1,3107 @@
+/* ==========================================================================
+   MyQuestify — интерфейс
+   --------------------------------------------------------------------------
+   Направление: «журнал квестов с хронометром». Данные (часы, токены, дедлайны)
+   набраны моноширинным шрифтом как показания прибора; текст — гротеском.
+   Каждый квест несёт сегментную шкалу — по одному делению на час, то есть
+   шкала показывает ровно то, из чего считается награда.
+
+   Liquid Glass собирается из четырёх слоёв, и ни один нельзя выбросить:
+     1. Аврора — цветные пятна ПОД панелями. Без источника цвета стекло
+        нечему преломлять, и blur даёт просто серую муть.
+     2. Полупрозрачная заливка + backdrop-filter с насыщением: именно
+        saturate() возвращает цвет, который съедает размытие.
+     3. Градиентная кромка через mask-composite — свет по краю стекла,
+        яркий сверху-слева и гаснущий книзу.
+     4. Внутренние тени: светлая линия сверху и тёмная снизу задают толщину.
+
+   Шрифты только системные: offline-режим запрещает подключение веб-шрифтов.
+   ========================================================================== */
+
+:root,
+:root[data-theme="dark"] {
+  /* Палитра из ТЗ */
+  --bg:            #121212;
+  --emerald:       #10b981;
+  --violet:        #8b5cf6;
+
+  /* Валюта и время — цвет награды. Единственный акцент вне палитры ТЗ,
+     закреплён строго за экономикой: токены и часовая шкала. */
+  --reward:        #f59e0b;
+  --danger:        #ef4444;
+
+  /* Текст */
+  --text:          #f0f0f2;
+  --text-dim:      #a2a2ad;
+  --text-faint:    #6f6f7c;
+
+  /* Стекло */
+  --glass-fill:    rgba(255, 255, 255, 0.055);
+  --glass-fill-2:  rgba(255, 255, 255, 0.028);
+  --glass-line:    rgba(255, 255, 255, 0.11);
+  --glass-blur:    22px;
+
+  /* Типографика */
+  --font-ui:   "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system,
+               "Noto Sans", Roboto, sans-serif;
+  --font-mono: "Cascadia Mono", Consolas, ui-monospace, "SF Mono",
+               "Roboto Mono", "DejaVu Sans Mono", monospace;
+
+  /* Ритм */
+  --gap:       20px;
+  --radius:    20px;
+  --radius-sm: 12px;
+}
+
+/* --------------------------------------------------------------------------
+   Сброс и база
+   -------------------------------------------------------------------------- */
+
+*,
+*::before,
+*::after { box-sizing: border-box; }
+
+html, body { height: 100%; }
+
+body {
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--text);
+  background: #0b0b0d;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+button, input { font: inherit; color: inherit; }
+
+code {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+:focus-visible {
+  outline: 2px solid var(--emerald);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* --------------------------------------------------------------------------
+   Аврора — источник цвета для стекла
+   -------------------------------------------------------------------------- */
+
+.aurora {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  background:
+    radial-gradient(120% 90% at 50% 0%, #17172a 0%, #0d0d12 55%, #08080a 100%);
+}
+
+.aurora__blob {
+  position: absolute;
+  display: block;
+  border-radius: 50%;
+  filter: blur(90px);
+  opacity: 0.55;
+}
+
+.aurora__blob--violet {
+  width: 46vw;
+  height: 46vw;
+  top: -14vw;
+  left: -6vw;
+  background: radial-gradient(circle, rgba(139, 92, 246, 0.75), transparent 68%);
+  animation: drift-a 26s ease-in-out infinite alternate;
+}
+
+.aurora__blob--emerald {
+  width: 42vw;
+  height: 42vw;
+  top: 4vw;
+  right: -8vw;
+  background: radial-gradient(circle, rgba(16, 185, 129, 0.6), transparent 68%);
+  animation: drift-b 32s ease-in-out infinite alternate;
+}
+
+.aurora__blob--warm {
+  width: 52vw;
+  height: 40vw;
+  bottom: -20vw;
+  left: 26vw;
+  background: radial-gradient(circle, rgba(245, 158, 11, 0.34), transparent 70%);
+  animation: drift-c 38s ease-in-out infinite alternate;
+}
+
+@keyframes drift-a {
+  to { transform: translate3d(7vw, 5vw, 0) scale(1.12); }
+}
+@keyframes drift-b {
+  to { transform: translate3d(-6vw, 7vw, 0) scale(1.08); }
+}
+@keyframes drift-c {
+  to { transform: translate3d(4vw, -5vw, 0) scale(1.15); }
+}
+
+/* --------------------------------------------------------------------------
+   Стекло
+   -------------------------------------------------------------------------- */
+
+.glass {
+  position: relative;
+  border-radius: var(--radius);
+  background:
+    linear-gradient(160deg, var(--glass-fill) 0%, var(--glass-fill-2) 46%, rgba(255, 255, 255, 0.05) 100%);
+  backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  box-shadow:
+    0 24px 60px rgba(0, 0, 0, 0.5),
+    0 2px 10px rgba(0, 0, 0, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.24),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.3);
+  /* Запасная кромка: если mask-composite недоступен, стекло не потеряет край. */
+  border: 1px solid var(--glass-line);
+}
+
+/* Слой 3: светящаяся кромка. Градиент обрезается маской до полоски в 1px,
+   поэтому свет по периметру неравномерный — как на настоящем стекле. */
+.glass::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(
+    145deg,
+    rgba(255, 255, 255, 0.55) 0%,
+    rgba(255, 255, 255, 0.08) 28%,
+    rgba(255, 255, 255, 0) 52%,
+    rgba(255, 255, 255, 0.28) 100%
+  );
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* Слой 4: блик. Широкое мягкое пятно в левом верхнем углу — главный признак
+   объёма, из-за которого стекло не выглядит серым прямоугольником. */
+.glass::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background:
+    radial-gradient(120% 80% at 12% -10%, rgba(255, 255, 255, 0.14), transparent 55%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.glass > * { position: relative; z-index: 2; }
+
+.glass--bar { border-radius: 0 0 var(--radius) var(--radius); }
+.glass--chip { border-radius: 14px; }
+
+/* --------------------------------------------------------------------------
+   Утилиты
+   -------------------------------------------------------------------------- */
+
+.eyebrow {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+/* --------------------------------------------------------------------------
+   Шапка
+   -------------------------------------------------------------------------- */
+
+.topbar {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: var(--gap);
+  padding: 14px clamp(16px, 3vw, 30px);
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  margin: 0 clamp(8px, 1.5vw, 18px);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+
+/* Знак: ядро награды в кольце-циферблате — эмблема приложения. */
+.brand__mark {
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 42% 38%, #ffd88a 0 16%, var(--reward) 22%, transparent 24%),
+    conic-gradient(from -100deg, var(--violet), var(--emerald), var(--violet));
+  box-shadow:
+    0 0 22px rgba(245, 158, 11, 0.4),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.18);
+}
+
+.brand__text { min-width: 0; }
+
+.brand__name {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  white-space: nowrap;
+}
+
+.brand__name em {
+  font-style: normal;
+  font-weight: 300;
+  color: var(--text-dim);
+}
+
+.brand__tag {
+  margin: 1px 0 0;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.wallet {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  padding: 6px 16px;
+}
+
+.wallet__label {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.wallet__value {
+  font-family: var(--font-mono);
+  font-size: 23px;
+  font-weight: 700;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+  color: var(--reward);
+  text-shadow: 0 0 18px rgba(245, 158, 11, 0.45);
+  transition: transform 0.24s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.wallet.is-bumped .wallet__value { transform: scale(1.16); }
+
+.engine {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.engine__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text-faint);
+}
+
+.engine[data-state="online"] .engine__dot {
+  background: var(--violet);
+  box-shadow: 0 0 12px var(--violet);
+}
+
+.engine[data-state="offline"] .engine__dot { background: var(--danger); }
+
+/* --------------------------------------------------------------------------
+   Рабочая область — grid из ТЗ
+   -------------------------------------------------------------------------- */
+
+.workspace {
+  display: grid;
+  grid-template-columns: minmax(360px, 5fr) minmax(400px, 6fr);
+  gap: var(--gap);
+  padding: var(--gap) clamp(16px, 3vw, 30px) 32px;
+  align-items: start;
+}
+
+.panel { overflow: hidden; }
+
+/* Тонкая цветовая кромка сверху — единственное различие панелей:
+   изумруд = завершение квестов, фиолетовый = территория ИИ и сцены. */
+.panel--quests { border-top-color: rgba(16, 185, 129, 0.34); }
+.panel--scene  { border-top-color: rgba(139, 92, 246, 0.34); }
+
+.panel__head {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-areas:
+    "eyebrow meta"
+    "title   meta";
+  align-items: center;
+  gap: 2px 12px;
+  padding: 18px 22px 16px;
+}
+
+.panel__head .eyebrow { grid-area: eyebrow; }
+
+.panel__title {
+  grid-area: title;
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+}
+
+.panel__meta {
+  grid-area: meta;
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: var(--text-dim);
+}
+
+.level { color: var(--emerald); font-weight: 700; }
+
+/* --------------------------------------------------------------------------
+   Форма создания квеста
+   -------------------------------------------------------------------------- */
+
+.composer {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  padding: 4px 22px 20px;
+}
+
+.field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.field--wide { grid-column: 1 / -1; }
+
+.field__label {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.field__input {
+  width: 100%;
+  padding: 11px 13px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: var(--radius-sm);
+  background: rgba(0, 0, 0, 0.3);
+  color: var(--text);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.4);
+  transition: border-color 0.16s ease, background-color 0.16s ease,
+              box-shadow 0.16s ease;
+}
+
+.field__input::placeholder { color: var(--text-faint); }
+
+.field__input:hover { border-color: rgba(255, 255, 255, 0.2); }
+
+.field__input:focus {
+  outline: none;
+  border-color: rgba(16, 185, 129, 0.75);
+  background: rgba(16, 185, 129, 0.08);
+  box-shadow:
+    inset 0 1px 2px rgba(0, 0, 0, 0.3),
+    0 0 0 3px rgba(16, 185, 129, 0.14);
+}
+
+.field__input--num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Календарь браузера тёмный: иначе иконка не видна на чёрном фоне. */
+.field__input[type="datetime-local"] { color-scheme: dark; }
+
+.composer__foot {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.composer__reward {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.composer__reward-value {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--reward);
+  font-variant-numeric: tabular-nums;
+}
+
+.composer__reward-unit { color: var(--text-faint); }
+
+/* --------------------------------------------------------------------------
+   Кнопки
+   -------------------------------------------------------------------------- */
+
+.btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 20px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: var(--radius-sm);
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.03));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.2),
+    0 6px 16px rgba(0, 0, 0, 0.3);
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  transition: transform 0.14s ease, background 0.16s ease,
+              border-color 0.16s ease, box-shadow 0.16s ease;
+}
+
+.btn:hover:not(:disabled) { transform: translateY(-1px); }
+.btn:active:not(:disabled) { transform: translateY(0) scale(0.985); }
+.btn:disabled { opacity: 0.42; cursor: not-allowed; transform: none; }
+
+.btn--primary {
+  border-color: rgba(16, 185, 129, 0.5);
+  background: linear-gradient(160deg, rgba(16, 185, 129, 0.34), rgba(16, 185, 129, 0.13));
+  color: #d9fcef;
+}
+
+.btn--primary:hover:not(:disabled) {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.28),
+    0 10px 26px rgba(16, 185, 129, 0.28);
+}
+
+.btn--accent {
+  border-color: rgba(139, 92, 246, 0.5);
+  background: linear-gradient(160deg, rgba(139, 92, 246, 0.34), rgba(139, 92, 246, 0.12));
+  color: #e6ddff;
+}
+
+.btn--accent:hover:not(:disabled) {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.28),
+    0 10px 26px rgba(139, 92, 246, 0.3);
+}
+
+.btn--ghost:hover:not(:disabled) {
+  border-color: rgba(255, 255, 255, 0.24);
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.05));
+}
+
+.btn__spinner {
+  display: none;
+  width: 13px;
+  height: 13px;
+  border: 2px solid rgba(255, 255, 255, 0.25);
+  border-top-color: currentColor;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+
+.btn.is-busy .btn__spinner { display: inline-block; }
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* --------------------------------------------------------------------------
+   Список квестов
+   -------------------------------------------------------------------------- */
+
+.tasks {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 0 22px 22px;
+  max-height: 46vh;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+}
+
+.tasks::-webkit-scrollbar { width: 8px; }
+.tasks::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.16);
+  border-radius: 8px;
+}
+
+.tasks__placeholder {
+  margin: 22px 0;
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-faint);
+}
+
+.task {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 10px 14px;
+  padding: 14px 16px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: var(--radius-sm);
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  animation: rise 0.28s ease both;
+}
+
+@keyframes rise {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* Заголовок и часовая шкала — один блок, выровненный по центру относительно
+   награды справа. Раньше текст прижимался к верхнему краю карточки. */
+.task__main {
+  grid-column: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 9px;
+  min-width: 0;
+}
+
+.task__title {
+  margin: 0;
+  font-size: 14.5px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.task__side {
+  grid-column: 2;
+  grid-row: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 8px;
+}
+
+.task__reward {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--reward);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Сегментная шкала: одно деление = один час = 10 FT. */
+.hours {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  color: var(--text-faint);
+}
+
+.hours__bar { display: flex; gap: 3px; }
+
+.hours__seg {
+  width: 6px;
+  height: 12px;
+  border-radius: 2px;
+  background: rgba(245, 158, 11, 0.8);
+  box-shadow: 0 0 6px rgba(245, 158, 11, 0.35);
+}
+
+.task--completed .hours__seg {
+  background: rgba(16, 185, 129, 0.55);
+  box-shadow: none;
+}
+
+.task--failed .hours__seg {
+  background: rgba(255, 255, 255, 0.14);
+  box-shadow: none;
+}
+
+.task__note {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: 9px 12px;
+  border-left: 2px solid var(--violet);
+  border-radius: 0 8px 8px 0;
+  background: linear-gradient(90deg, rgba(139, 92, 246, 0.18), rgba(139, 92, 246, 0.05));
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: #ddd2ff;
+}
+
+.task__meta {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  color: var(--text-faint);
+}
+
+.chip {
+  padding: 3px 9px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+}
+
+.chip--pending   { color: var(--text-dim); }
+.chip--completed { color: var(--emerald); border-color: rgba(16, 185, 129, 0.42); }
+.chip--failed    { color: var(--danger);  border-color: rgba(239, 68, 68, 0.42); }
+.chip--overdue   { color: var(--danger);  border-color: rgba(239, 68, 68, 0.42); }
+
+.task--completed { border-color: rgba(16, 185, 129, 0.22); }
+.task--completed .task__title { color: var(--text-dim); text-decoration: line-through; }
+
+.btn--complete {
+  padding: 7px 14px;
+  font-size: 12.5px;
+  border-color: rgba(16, 185, 129, 0.42);
+  color: #b8f2df;
+}
+
+/* --------------------------------------------------------------------------
+   Вкладки сцен
+   -------------------------------------------------------------------------- */
+
+.tabs {
+  display: flex;
+  gap: 8px;
+  padding: 0 22px 4px;
+  flex-wrap: wrap;
+}
+
+.tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  transition: color 0.16s ease, border-color 0.16s ease, background 0.16s ease;
+}
+
+.tab:hover { color: var(--text); border-color: rgba(255, 255, 255, 0.22); }
+
+.tab.is-active {
+  color: #d9fcef;
+  border-color: rgba(16, 185, 129, 0.5);
+  background: linear-gradient(160deg, rgba(16, 185, 129, 0.24), rgba(16, 185, 129, 0.08));
+}
+
+.tab__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.6;
+}
+
+/* --------------------------------------------------------------------------
+   Сцена
+   -------------------------------------------------------------------------- */
+
+.stage {
+  position: relative;
+  min-height: 380px;
+  aspect-ratio: 4 / 3;
+  margin: 12px 22px 18px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background-color: #07080b;
+  background-size: cover;
+  background-position: center;
+  box-shadow:
+    inset 0 2px 14px rgba(0, 0, 0, 0.6),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  cursor: crosshair;
+  touch-action: none;   /* иначе жест перетаскивания скроллит страницу */
+}
+
+/* С пользовательским фоном рамка сцены светлеет: видно, что фон куплен. */
+.stage.has-custom-bg { border-color: rgba(255, 255, 255, 0.18); }
+
+.stage canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.stage__hint,
+.stage__fallback {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 10px;
+  margin: 0;
+  padding: 8px 11px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  background: rgba(8, 10, 14, 0.62);
+  backdrop-filter: blur(14px) saturate(160%);
+  -webkit-backdrop-filter: blur(14px) saturate(160%);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  color: var(--text-dim);
+  text-align: center;
+  transition: opacity 0.5s ease;
+  pointer-events: none;
+}
+
+/* visibility, а не только opacity: прозрачный элемент остаётся в дереве и
+   при следующем перерисовывании браузер иногда возвращает ему видимость
+   через переход. */
+.stage__hint.is-faded {
+  opacity: 0;
+  visibility: hidden;
+}
+
+.stage__fallback {
+  top: 50%;
+  bottom: auto;
+  transform: translateY(-50%);
+  line-height: 1.7;
+}
+
+.scene__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 0 22px 22px;
+}
+
+.scene__actions { display: flex; gap: 10px; flex-wrap: wrap; }
+
+.price {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.price__value {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--reward);
+  font-variant-numeric: tabular-nums;
+}
+
+/* --------------------------------------------------------------------------
+   Магазин
+   -------------------------------------------------------------------------- */
+
+.modal {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: clamp(16px, 4vw, 48px);
+}
+
+.modal[hidden] { display: none; }
+
+.modal__backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(4, 5, 8, 0.62);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  animation: fade-in 0.2s ease both;
+}
+
+/* Модальное окно всегда всплывает над сценой, то есть над непредсказуемым
+   фоном. Поэтому его заливка плотнее панелей, а не равна им. */
+.modal__panel {
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(160deg, rgba(26, 26, 34, 0.94), rgba(18, 18, 24, 0.9));
+  will-change: transform;
+  width: min(760px, 100%);
+  max-height: 86vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Анимация появления живёт в отдельном классе и снимается по её окончании:
+   с animation-fill-mode: both финальный transform перебивал бы inline-стиль
+   перетаскивания, и окно нельзя было бы сдвинуть. */
+.modal__panel.is-entering {
+  animation: pop-in 0.26s cubic-bezier(0.34, 1.4, 0.64, 1) both;
+}
+
+.modal__panel.is-dragging {
+  transition: none;
+  box-shadow:
+    0 40px 90px rgba(0, 0, 0, 0.6),
+    inset 0 1px 0 rgba(255, 255, 255, 0.26);
+}
+
+@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+
+@keyframes pop-in {
+  from { opacity: 0; transform: translateY(14px) scale(0.97); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* Шапка — ручка перетаскивания. Курсор объясняет это без подписи. */
+.modal__head {
+  cursor: grab;
+  user-select: none;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 20px 24px 12px;
+}
+
+.modal__title {
+  margin: 2px 0 0;
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+}
+
+.modal__panel.is-dragging .modal__head { cursor: grabbing; }
+
+.modal__close {
+  cursor: pointer;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 auto;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-dim);
+  font-size: 19px;
+  line-height: 1;
+  cursor: pointer;
+  transition: color 0.16s ease, border-color 0.16s ease;
+}
+
+.modal__close:hover { color: var(--text); border-color: rgba(255, 255, 255, 0.28); }
+
+.shop {
+  min-height: 0;
+  flex: 1 1 auto;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 14px;
+  padding: 8px 24px 24px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+}
+
+.shop__card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: var(--radius-sm);
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.02));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+.shop__card.is-owned { border-color: rgba(16, 185, 129, 0.3); }
+
+.shop__name {
+  margin: 0;
+  font-size: 15.5px;
+  font-weight: 600;
+}
+
+.shop__tagline {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--violet);
+}
+
+.shop__desc {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-dim);
+  flex: 1;
+}
+
+.shop__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.shop__price {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--reward);
+  font-variant-numeric: tabular-nums;
+}
+
+.shop__badge {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--emerald);
+}
+
+/* --------------------------------------------------------------------------
+   Уведомления
+   -------------------------------------------------------------------------- */
+
+.toasts {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 70;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: min(360px, calc(100vw - 40px));
+  pointer-events: none;
+}
+
+.toast {
+  padding: 12px 16px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-left-width: 3px;
+  border-radius: var(--radius-sm);
+  background: rgba(20, 20, 26, 0.82);
+  backdrop-filter: blur(18px) saturate(170%);
+  -webkit-backdrop-filter: blur(18px) saturate(170%);
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.5);
+  font-size: 13px;
+  animation: slide-in 0.24s ease both;
+}
+
+.toast--success { border-left-color: var(--emerald); }
+.toast--info    { border-left-color: var(--violet); }
+.toast--error   { border-left-color: var(--danger); }
+
+.toast.is-leaving { animation: slide-out 0.22s ease both; }
+
+@keyframes slide-in {
+  from { opacity: 0; transform: translateX(24px); }
+  to   { opacity: 1; transform: none; }
+}
+
+@keyframes slide-out {
+  from { opacity: 1; transform: none; }
+  to   { opacity: 0; transform: translateX(24px); }
+}
+
+/* --------------------------------------------------------------------------
+   Адаптивность: < 768px — одна колонка (требование ТЗ)
+   -------------------------------------------------------------------------- */
+
+@media (max-width: 768px) {
+  .workspace { grid-template-columns: 1fr; }
+
+  .topbar {
+    grid-template-columns: 1fr auto;
+    row-gap: 12px;
+  }
+
+  .engine {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
+  }
+
+  .composer { grid-template-columns: 1fr; }
+
+  .stage {
+    margin: 12px 16px 16px;
+    min-height: 300px;
+    aspect-ratio: 3 / 4;
+  }
+
+  .tasks { max-height: none; }
+
+  .shop { grid-template-columns: 1fr; }
+
+  .toasts { left: 16px; right: 16px; max-width: none; }
+}
+
+/* --------------------------------------------------------------------------
+   Доступность: уважаем системную настройку уменьшения движения.
+   Аврора и блики останавливаются, физика сцены — нет: она и есть продукт.
+   -------------------------------------------------------------------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  .aurora__blob { animation: none; }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Светлая тема
+   --------------------------------------------------------------------------
+   Liquid Glass на светлом фоне устроен зеркально тёмному: заливка панели
+   становится не светлее фона, а плотнее и белее, кромка — тоньше, а тени
+   отвечают за отрыв от подложки вместо внутренней подсветки. Просто
+   инвертировать цвета нельзя: белое стекло на белом фоне исчезает.
+   -------------------------------------------------------------------------- */
+
+:root[data-theme="light"] {
+  --bg:            #f4f5f9;
+
+  --text:          #1a1b22;
+  --text-dim:      #56596a;
+  --text-faint:    #858999;
+
+  /* Плотность подобрана под худший случай: панель поверх чёрного холста
+     сцены. При 0.72/0.48 сквозь стекло просвечивала сцена, и текст ложился
+     на тёмную диагональ. Читаемость важнее прозрачности. */
+  --glass-fill:    rgba(255, 255, 255, 0.93);
+  --glass-fill-2:  rgba(255, 255, 255, 0.86);
+  --glass-line:    rgba(255, 255, 255, 0.9);
+  --glass-blur:    26px;
+
+  /* Акценты приглушены: на светлом фоне те же значения бьют по глазам. */
+  --emerald:       #059669;
+  --violet:        #7c4ddb;
+  --reward:        #c2760a;
+  --danger:        #dc2626;
+}
+
+:root[data-theme="light"] body { background: #eef0f6; }
+
+:root[data-theme="light"] .aurora {
+  background: radial-gradient(120% 90% at 50% 0%, #ffffff 0%, #eceffa 55%, #e4e8f4 100%);
+}
+
+:root[data-theme="light"] .aurora__blob { opacity: 0.4; filter: blur(80px); }
+
+:root[data-theme="light"] .glass {
+  box-shadow:
+    0 18px 44px rgba(38, 44, 70, 0.14),
+    0 2px 8px rgba(38, 44, 70, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.95);
+  border-color: rgba(255, 255, 255, 0.85);
+}
+
+:root[data-theme="light"] .glass::before {
+  background: linear-gradient(
+    145deg,
+    rgba(255, 255, 255, 0.95) 0%,
+    rgba(255, 255, 255, 0.4) 30%,
+    rgba(140, 150, 180, 0.14) 60%,
+    rgba(255, 255, 255, 0.7) 100%
+  );
+}
+
+:root[data-theme="light"] .glass::after {
+  background: radial-gradient(120% 80% at 12% -10%, rgba(255, 255, 255, 0.85), transparent 58%);
+}
+
+:root[data-theme="light"] .field__input,
+:root[data-theme="light"] .setting__num {
+  background: rgba(255, 255, 255, 0.85);
+  border-color: rgba(30, 36, 60, 0.14);
+  box-shadow: inset 0 1px 2px rgba(38, 44, 70, 0.07);
+}
+
+:root[data-theme="light"] .field__input[type="datetime-local"] { color-scheme: light; }
+
+:root[data-theme="light"] .task,
+:root[data-theme="light"] .shop__card,
+:root[data-theme="light"] .chain__node-row {
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.8), rgba(255, 255, 255, 0.5));
+  border-color: rgba(30, 36, 60, 0.1);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
+:root[data-theme="light"] .btn {
+  border-color: rgba(30, 36, 60, 0.14);
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.9), rgba(255, 255, 255, 0.6));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.95),
+    0 4px 12px rgba(38, 44, 70, 0.1);
+}
+
+:root[data-theme="light"] .btn--primary {
+  background: linear-gradient(160deg, rgba(5, 150, 105, 0.2), rgba(5, 150, 105, 0.08));
+  border-color: rgba(5, 150, 105, 0.4);
+  color: #05493a;
+}
+
+:root[data-theme="light"] .btn--accent {
+  background: linear-gradient(160deg, rgba(124, 77, 219, 0.2), rgba(124, 77, 219, 0.07));
+  border-color: rgba(124, 77, 219, 0.38);
+  color: #3b1f78;
+}
+
+:root[data-theme="light"] .task__note {
+  background: linear-gradient(90deg, rgba(124, 77, 219, 0.14), rgba(124, 77, 219, 0.04));
+  color: #3d2a70;
+}
+
+:root[data-theme="light"] .toast,
+:root[data-theme="light"] .stage__hint,
+:root[data-theme="light"] .stage__fallback {
+  background: rgba(255, 255, 255, 0.88);
+  color: var(--text-dim);
+}
+
+:root[data-theme="light"] .modal__backdrop { background: rgba(30, 36, 60, 0.32); }
+
+:root[data-theme="light"] .modal__panel {
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.97), rgba(246, 247, 252, 0.95));
+}
+
+:root[data-theme="light"] .setting { border-bottom-color: rgba(30, 36, 60, 0.1); }
+
+:root[data-theme="light"] .segmented { background: rgba(30, 36, 60, 0.07); }
+
+:root[data-theme="light"] .segmented__option.is-active {
+  background: #ffffff;
+  box-shadow: 0 2px 6px rgba(38, 44, 70, 0.16);
+}
+
+:root[data-theme="light"] .switch__track { background: rgba(30, 36, 60, 0.16); }
+:root[data-theme="light"] .switch__thumb { background: #ffffff; box-shadow: 0 1px 3px rgba(38,44,70,0.3); }
+
+:root[data-theme="light"] .icon-btn {
+  background: rgba(255, 255, 255, 0.8);
+  border-color: rgba(30, 36, 60, 0.14);
+}
+
+:root[data-theme="light"] .chain__list .chain__list { border-left-color: rgba(30, 36, 60, 0.14); }
+
+:root[data-theme="light"] .wallet__value { text-shadow: none; }
+
+:root[data-theme="light"] .tab.is-active {
+  background: linear-gradient(160deg, rgba(5, 150, 105, 0.18), rgba(5, 150, 105, 0.06));
+  color: #05493a;
+}
+
+:root[data-theme="light"] .bubble--user {
+  background: linear-gradient(160deg, rgba(5, 150, 105, 0.16), rgba(5, 150, 105, 0.06));
+  color: #05493a;
+}
+
+:root[data-theme="light"] .bubble--oracle {
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.9), rgba(255, 255, 255, 0.6));
+  color: var(--text);
+}
+
+/* Сцена остаётся тёмной в обеих темах: физика рисуется по собственным
+   градиентам, и «светлый» холст потребовал бы второго набора палитр. */
+
+/* --------------------------------------------------------------------------
+   Правая колонка: переключение видов
+   -------------------------------------------------------------------------- */
+
+.tabs--view { padding: 0 22px 8px; }
+
+.view { display: block; }
+.view[hidden] { display: none; }
+
+.topbar__side {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.icon-btn {
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--glass-line);
+  border-radius: 11px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-dim);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  transition: color 0.16s ease, border-color 0.16s ease, transform 0.16s ease;
+}
+
+.icon-btn:hover {
+  color: var(--text);
+  border-color: rgba(255, 255, 255, 0.3);
+  transform: rotate(35deg);
+}
+
+.link-btn {
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: color 0.16s ease;
+}
+
+.link-btn:hover { color: var(--danger); }
+
+/* --------------------------------------------------------------------------
+   Чат с Оракулом
+   -------------------------------------------------------------------------- */
+
+.chat {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 6px 22px 14px;
+  height: 46vh;
+  min-height: 300px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+}
+
+.bubble {
+  max-width: 84%;
+  padding: 11px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  font-size: 13.5px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  animation: rise 0.26s ease both;
+}
+
+.bubble--user {
+  align-self: flex-end;
+  border-bottom-right-radius: 5px;
+  background: linear-gradient(160deg, rgba(16, 185, 129, 0.26), rgba(16, 185, 129, 0.1));
+  color: #d9fcef;
+}
+
+.bubble--oracle {
+  align-self: flex-start;
+  border-bottom-left-radius: 5px;
+  border-left: 2px solid var(--violet);
+  background: linear-gradient(160deg, rgba(139, 92, 246, 0.16), rgba(139, 92, 246, 0.05));
+  color: #e3d9ff;
+  font-style: italic;
+}
+
+/* Ответ защитного слоя оформляется иначе: пользователь должен видеть, что
+   это позиция приложения, а не очередная реплика персонажа. */
+.bubble--guarded {
+  border-left-color: var(--reward);
+  background: linear-gradient(160deg, rgba(245, 158, 11, 0.14), rgba(245, 158, 11, 0.04));
+  color: var(--text);
+  font-style: normal;
+}
+
+.bubble--typing { opacity: 0.6; font-style: italic; }
+
+.chat__composer {
+  display: flex;
+  gap: 10px;
+  padding: 0 22px 12px;
+}
+
+.chat__composer .field__input { flex: 1; }
+
+.chat__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 0 22px 20px;
+}
+
+.chat__note {
+  margin: 0;
+  font-size: 11px;
+  color: var(--text-faint);
+  flex: 1;
+  min-width: 200px;
+}
+
+/* --------------------------------------------------------------------------
+   Цепочка мыслей
+   -------------------------------------------------------------------------- */
+
+.chain {
+  padding: 4px 24px 12px;
+  overflow-y: auto;
+  min-height: 0;
+  flex: 1 1 auto;
+  max-height: 54vh;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+}
+
+.chain__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+/* Вложенный список смещается и получает направляющую линию — так дерево
+   читается без иконок раскрытия, как в аутлайнере. */
+.chain__list .chain__list {
+  margin-left: 13px;
+  padding-left: 15px;
+  border-left: 1px solid var(--glass-line);
+}
+
+.chain__node { margin: 6px 0; }
+
+.chain__node-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 9px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 10px;
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02));
+}
+
+.chain__node-row.is-done .chain__text {
+  color: var(--text-faint);
+  text-decoration: line-through;
+}
+
+.chain__check {
+  margin-top: 2px;
+  width: 15px;
+  height: 15px;
+  flex: 0 0 auto;
+  accent-color: var(--emerald);
+  cursor: pointer;
+}
+
+.chain__text {
+  flex: 1;
+  font-size: 13.5px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+/* Узел, предложенный моделью, помечен: пользователь должен отличать свои
+   формулировки от машинных, иначе цепочка перестаёт быть его планом. */
+.chain__badge {
+  flex: 0 0 auto;
+  padding: 2px 7px;
+  border: 1px solid rgba(139, 92, 246, 0.4);
+  border-radius: 999px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--violet);
+}
+
+.chain__actions { display: flex; gap: 4px; flex: 0 0 auto; }
+
+.chain__act {
+  width: 26px;
+  height: 26px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: none;
+  color: var(--text-faint);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  transition: color 0.14s ease, border-color 0.14s ease;
+}
+
+.chain__act:hover { color: var(--text); border-color: var(--glass-line); }
+.chain__act--danger:hover { color: var(--danger); border-color: rgba(239, 68, 68, 0.4); }
+
+.chain__composer {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 0 24px 24px;
+}
+
+.chain__composer .field__input { flex: 1; min-width: 200px; }
+
+/* --------------------------------------------------------------------------
+   Настройки
+   -------------------------------------------------------------------------- */
+
+.settings {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 4px 24px 24px;
+  overflow-y: auto;
+  /* Без min-height: 0 flex-потомок не сжимается ниже своего содержимого,
+     и overflow-y не срабатывает — нижние настройки просто обрезались. */
+  min-height: 0;
+  flex: 1 1 auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+}
+
+.settings::-webkit-scrollbar { width: 8px; }
+.settings::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.16);
+  border-radius: 8px;
+}
+
+.setting {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--glass-line);
+}
+
+.setting:last-child { border-bottom: none; }
+
+.setting__text { min-width: 0; }
+
+.setting__name {
+  margin: 0 0 3px;
+  font-size: 14.5px;
+  font-weight: 600;
+}
+
+.setting__hint {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-faint);
+}
+
+.setting__num { width: 96px; flex: 0 0 auto; text-align: center; }
+
+.segmented {
+  display: flex;
+  flex: 0 0 auto;
+  padding: 3px;
+  border: 1px solid var(--glass-line);
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.segmented__option {
+  padding: 7px 14px;
+  border: none;
+  border-radius: 9px;
+  background: none;
+  color: var(--text-faint);
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: color 0.16s ease, background 0.16s ease;
+}
+
+.segmented__option.is-active {
+  color: var(--text);
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.06));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22);
+}
+
+.switch { flex: 0 0 auto; cursor: pointer; }
+.switch input { position: absolute; opacity: 0; width: 0; height: 0; }
+
+.switch__track {
+  display: block;
+  width: 46px;
+  height: 26px;
+  padding: 3px;
+  border: 1px solid var(--glass-line);
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.28);
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.switch__thumb {
+  display: block;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--text-faint);
+  transition: transform 0.2s cubic-bezier(0.34, 1.4, 0.64, 1), background 0.2s ease;
+}
+
+.switch input:checked + .switch__track {
+  background: linear-gradient(160deg, rgba(16, 185, 129, 0.4), rgba(16, 185, 129, 0.16));
+  border-color: rgba(16, 185, 129, 0.5);
+}
+
+.switch input:checked + .switch__track .switch__thumb {
+  transform: translateX(20px);
+  background: #eafff6;
+}
+
+.switch input:focus-visible + .switch__track {
+  outline: 2px solid var(--emerald);
+  outline-offset: 2px;
+}
+
+/* Ручная настройка «меньше движения» действует так же, как системная. */
+:root[data-motion="reduced"] .aurora__blob { animation: none; }
+
+@media (max-width: 768px) {
+  .chat { height: auto; max-height: 60vh; }
+  .setting { flex-direction: column; align-items: flex-start; gap: 12px; }
+}
+
+/* --------------------------------------------------------------------------
+   Паутина рассуждений
+   -------------------------------------------------------------------------- */
+
+.tabs--chain { padding: 0 24px 8px; }
+
+.web {
+  position: relative;
+  margin: 0 24px 12px;
+  height: 52vh;
+  min-height: 320px;
+  border: 1px solid var(--glass-line);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: #07080b;
+  box-shadow: inset 0 2px 14px rgba(0, 0, 0, 0.55);
+  touch-action: none;
+}
+
+.web[hidden] { display: none; }
+
+.web canvas { display: block; width: 100%; height: 100%; }
+
+/* Строка-редактор: поле ввода занимает место текста, не меняя высоту ряда. */
+.chain__editor {
+  flex: 1;
+  padding: 4px 8px;
+  border: 1px solid rgba(16, 185, 129, 0.6);
+  border-radius: 7px;
+  background: rgba(16, 185, 129, 0.08);
+  color: var(--text);
+  font-size: 13.5px;
+}
+
+.chain__editor:focus {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.16);
+}
+
+.chain__text { cursor: text; }
+.chain__text:hover { text-decoration: underline dotted rgba(255, 255, 255, 0.3); }
+
+:root[data-theme="light"] .chain__text:hover {
+  text-decoration-color: rgba(30, 36, 60, 0.3);
+}
+
+:root[data-theme="light"] .chain__editor {
+  background: rgba(255, 255, 255, 0.9);
+  color: var(--text);
+}
+
+/* Взведённая кнопка удаления: второе нажатие подтверждает. */
+.chain__act--armed {
+  color: var(--danger);
+  border-color: rgba(239, 68, 68, 0.5);
+  background: rgba(239, 68, 68, 0.12);
+}
+
+/* --------------------------------------------------------------------------
+   Предпросмотр запертой сцены
+   -------------------------------------------------------------------------- */
+
+/* Запертая вкладка остаётся видимой: сцена существует, её нужно открыть.
+   Спрятать её значило бы сделать вид, что содержимого нет. */
+.tab.is-locked {
+  color: var(--text-faint);
+  border-style: dashed;
+}
+
+.tab.is-locked.is-active {
+  color: var(--reward);
+  border-color: rgba(245, 158, 11, 0.5);
+  background: linear-gradient(160deg, rgba(245, 158, 11, 0.18), rgba(245, 158, 11, 0.06));
+}
+
+.tab__lock { font-size: 9px; opacity: 0.8; }
+
+.preview-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 0 22px 10px;
+  padding: 9px 14px;
+  border: 1px solid rgba(245, 158, 11, 0.34);
+  border-radius: var(--radius-sm);
+  background: linear-gradient(160deg, rgba(245, 158, 11, 0.14), rgba(245, 158, 11, 0.04));
+}
+
+.preview-bar[hidden] { display: none; }
+
+.preview-bar__text {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  color: var(--reward);
+}
+
+.preview-bar__actions { display: flex; gap: 8px; }
+
+.btn--slim { padding: 6px 13px; font-size: 12.5px; }
+
+.shop__need {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  color: var(--text-faint);
+}
+
+.shop__foot { flex-wrap: wrap; }
+
+/* Взведённое подтверждение очистки беседы. */
+.link-btn--armed { color: var(--danger); }
+
+/* ==========================================================================
+   ЭКРАН ЗАГРУЗКИ
+   --------------------------------------------------------------------------
+   Заголовок набран засечным шрифтом — единственное место в приложении, где
+   он появляется. Контраст с гротеском интерфейса делает вход в приложение
+   событием, а не просто паузой.
+   ========================================================================== */
+
+.splash {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+  background:
+    radial-gradient(90% 70% at 50% 0%, #1c1836 0%, #0c0b14 55%, #06060a 100%);
+  transition: opacity 0.45s ease;
+}
+
+.splash[hidden] { display: none; }
+.splash.is-leaving { opacity: 0; pointer-events: none; }
+
+.splash__inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  max-width: 620px;
+  animation: splash-rise 0.7s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes splash-rise {
+  from { opacity: 0; transform: translateY(18px); }
+  to   { opacity: 1; transform: none; }
+}
+
+.splash__mark {
+  width: 82px;
+  height: 82px;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 42% 38%, #ffe6a8 0 15%, #f59e0b 21%, transparent 23%),
+    conic-gradient(from -100deg, #8b5cf6, #10b981, #8b5cf6);
+  box-shadow:
+    0 0 48px rgba(245, 158, 11, 0.45),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.2);
+  animation: splash-spin 9s linear infinite;
+}
+
+@keyframes splash-spin { to { transform: rotate(360deg); } }
+
+.splash__name {
+  margin: 22px 0 0;
+  font-family: Georgia, "Times New Roman", "Iowan Old Style", serif;
+  font-size: clamp(34px, 6vw, 52px);
+  font-weight: 400;
+  letter-spacing: -0.02em;
+  color: #f4f2ff;
+}
+
+.splash__name em {
+  font-style: italic;
+  color: #b9a8f5;
+}
+
+.splash__tag {
+  margin: 8px 0 0;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.34em;
+  text-transform: uppercase;
+  color: rgba(200, 195, 230, 0.55);
+}
+
+.splash__quote {
+  margin: 40px 0 0;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: clamp(16px, 2.4vw, 21px);
+  font-style: italic;
+  line-height: 1.6;
+  color: rgba(238, 236, 252, 0.9);
+  animation: splash-fade 1s ease 0.25s both;
+}
+
+.splash__author {
+  display: block;
+  margin-top: 14px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-style: normal;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: #f0b23c;
+  animation: splash-fade 1s ease 0.45s both;
+}
+
+@keyframes splash-fade {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.splash__bar {
+  display: block;
+  width: 190px;
+  height: 2px;
+  margin-top: 42px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+}
+
+.splash__bar i {
+  display: block;
+  width: 40%;
+  height: 100%;
+  border-radius: 2px;
+  background: linear-gradient(90deg, transparent, #10b981, #8b5cf6, transparent);
+  animation: splash-slide 1.4s ease-in-out infinite;
+}
+
+@keyframes splash-slide {
+  0%   { transform: translateX(-110%); }
+  100% { transform: translateX(260%); }
+}
+
+/* ==========================================================================
+   СОБСТВЕННЫЕ ЭЛЕМЕНТЫ ВВОДА
+   ========================================================================== */
+
+/* Нативные стрелки убираются во всех браузерах: их заменяют свои кнопки. */
+.stepper__value::-webkit-outer-spin-button,
+.stepper__value::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.stepper__value {
+  -moz-appearance: textfield;
+  appearance: textfield;
+  text-align: center;
+  border-radius: 0 !important;
+  border-left: none !important;
+  border-right: none !important;
+}
+
+.stepper {
+  display: flex;
+  align-items: stretch;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(0, 0, 0, 0.3);
+}
+
+.stepper:focus-within {
+  border-color: rgba(16, 185, 129, 0.7);
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.14);
+}
+
+.stepper .field__input {
+  border: none;
+  box-shadow: none;
+  background: transparent;
+}
+
+.stepper .field__input:focus { box-shadow: none; background: transparent; }
+
+.stepper__btn {
+  width: 42px;
+  flex: 0 0 auto;
+  border: none;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-dim);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.14s ease, color 0.14s ease;
+}
+
+.stepper__btn:hover {
+  background: rgba(16, 185, 129, 0.22);
+  color: var(--text);
+}
+
+.stepper__btn:active { background: rgba(16, 185, 129, 0.34); }
+
+/* ---------------------------- календарь ---------------------------------- */
+
+.picker { position: relative; }
+
+.picker__trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  padding: 11px 13px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: var(--radius-sm);
+  background: rgba(0, 0, 0, 0.3);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.4);
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.16s ease, background 0.16s ease;
+}
+
+.picker__trigger:hover { border-color: rgba(255, 255, 255, 0.24); }
+
+.picker__trigger.is-open {
+  border-color: rgba(16, 185, 129, 0.7);
+  background: rgba(16, 185, 129, 0.08);
+}
+
+.picker__label { font-size: 14px; }
+.picker__label.is-empty { color: var(--text-faint); }
+.picker__icon { font-size: 14px; opacity: 0.7; }
+
+.picker__panel {
+  /* fixed, а не absolute: панель вынесена в body и позиционируется по
+     координатам экрана, иначе её обрезала бы карточка с overflow: hidden. */
+  position: fixed;
+  z-index: 210;
+  width: 296px;
+  /* Быстрые повторные нажатия браузер трактует как двойной щелчок и
+     выделяет текст; начатое выделение перехватывает последующее
+     перетаскивание указателя и сбивает листание. */
+  user-select: none;
+  -webkit-user-select: none;
+  padding: 14px;
+  border: 1px solid var(--glass-line);
+  border-radius: var(--radius);
+  background: linear-gradient(160deg, rgba(26, 26, 34, 0.97), rgba(18, 18, 24, 0.95));
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  box-shadow: 0 26px 60px rgba(0, 0, 0, 0.55);
+  animation: pop-in 0.18s ease both;
+}
+
+.picker__panel[hidden] { display: none; }
+
+.picker__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.picker__month {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.picker__nav {
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--glass-line);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-dim);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  transition: color 0.14s ease, border-color 0.14s ease, background 0.14s ease;
+}
+
+.picker__nav:hover {
+  color: var(--text);
+  border-color: rgba(16, 185, 129, 0.5);
+  background: rgba(16, 185, 129, 0.14);
+}
+
+.picker__weekdays,
+.picker__grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 3px;
+}
+
+.picker__weekdays {
+  margin-bottom: 5px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  text-align: center;
+}
+
+.picker__grid {
+  /* Шесть строк по 32 пикселя плюс промежутки: высота панели постоянна и
+     не зависит от того, сколько недель в просматриваемом месяце. */
+  min-height: calc(6 * 32px + 5 * 3px);
+  align-content: start;
+}
+
+.picker__day {
+  height: 32px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: none;
+  color: var(--text-dim);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease, transform 0.12s ease;
+}
+
+.picker__day:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text);
+  transform: scale(1.08);
+}
+
+.picker__day--empty {
+  pointer-events: none;
+  background: none;
+  border-color: transparent;
+  cursor: default;
+}
+
+.picker__day.is-today {
+  border-color: rgba(139, 92, 246, 0.6);
+  color: var(--violet);
+}
+
+.picker__day.is-selected {
+  background: linear-gradient(160deg, rgba(16, 185, 129, 0.9), rgba(5, 150, 105, 0.7));
+  color: #041b14;
+  font-weight: 700;
+  border-color: transparent;
+}
+
+.picker__time {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--glass-line);
+}
+
+.picker__time-label {
+  flex: 1;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.picker__clock {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.picker__spin {
+  width: 34px;
+  height: 18px;
+  border: none;
+  background: none;
+  color: var(--text-faint);
+  font-size: 9px;
+  line-height: 1;
+  cursor: pointer;
+  transition: color 0.12s ease;
+}
+
+.picker__spin:hover { color: var(--emerald); }
+
+.picker__digits {
+  font-family: var(--font-mono);
+  font-size: 19px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.picker__colon {
+  font-family: var(--font-mono);
+  font-size: 19px;
+  color: var(--text-faint);
+  padding-bottom: 2px;
+}
+
+.picker__foot {
+  display: flex;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.picker__action {
+  flex: 1;
+  padding: 8px 6px;
+  border: 1px solid var(--glass-line);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-dim);
+  font-size: 11.5px;
+  cursor: pointer;
+  transition: color 0.14s ease, border-color 0.14s ease, background 0.14s ease;
+}
+
+.picker__action:hover { color: var(--text); border-color: rgba(255, 255, 255, 0.3); }
+
+.picker__action--primary {
+  border-color: rgba(16, 185, 129, 0.5);
+  background: rgba(16, 185, 129, 0.18);
+  color: #d9fcef;
+}
+
+/* ==========================================================================
+   ВЫБРАННЫЙ УЗЕЛ ЦЕПОЧКИ
+   ========================================================================== */
+
+.chain__target {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px 6px 12px;
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  border-radius: 999px;
+  background: rgba(245, 158, 11, 0.12);
+  max-width: 100%;
+}
+
+.chain__target[hidden] { display: none; }
+
+.chain__target-label {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--reward);
+}
+
+.chain__target-name {
+  font-size: 12.5px;
+  color: var(--text);
+  max-width: 190px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chain__target-clear {
+  width: 20px;
+  height: 20px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text-dim);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.chain__target-clear:hover { color: var(--danger); }
+
+/* Строка, выбранная как родитель, подсвечена так же, как кольцо в паутине. */
+.chain__node-row.is-target {
+  border-color: rgba(245, 158, 11, 0.55);
+  background: linear-gradient(160deg, rgba(245, 158, 11, 0.14), rgba(245, 158, 11, 0.04));
+}
+
+.chain__node-row { cursor: pointer; transition: border-color 0.14s ease, background 0.14s ease; }
+.chain__node-row:hover { border-color: rgba(255, 255, 255, 0.18); }
+
+/* ==========================================================================
+   СВЕТЛАЯ ТЕМА — ИСПРАВЛЕНИЯ КОНТРАСТА
+   --------------------------------------------------------------------------
+   Тёмные значения акцентов, разбавленные до 12-20% на белом, дают текст
+   светлее фона: кнопка «Завершить» была почти невидима, значки действий
+   исчезали. Здесь контраст восстанавливается по каждому месту, где текст
+   лежит на цветной подложке.
+   ========================================================================== */
+
+:root[data-theme="light"] .btn--complete {
+  background: linear-gradient(160deg, rgba(5, 150, 105, 0.9), rgba(4, 120, 87, 0.85));
+  border-color: rgba(4, 108, 78, 0.5);
+  color: #ffffff;
+}
+
+:root[data-theme="light"] .btn--complete:hover:not(:disabled) {
+  background: linear-gradient(160deg, rgba(4, 130, 92, 1), rgba(3, 100, 72, 0.95));
+}
+
+:root[data-theme="light"] .btn--primary {
+  background: linear-gradient(160deg, #059669, #047857);
+  border-color: rgba(4, 108, 78, 0.5);
+  color: #ffffff;
+}
+
+:root[data-theme="light"] .btn--accent {
+  background: linear-gradient(160deg, #7c4ddb, #6234c0);
+  border-color: rgba(86, 44, 172, 0.5);
+  color: #ffffff;
+}
+
+:root[data-theme="light"] .btn--primary:hover:not(:disabled),
+:root[data-theme="light"] .btn--accent:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+/* Значки действий в цепочке были почти белыми на белом. */
+:root[data-theme="light"] .chain__act,
+:root[data-theme="light"] .icon-btn,
+:root[data-theme="light"] .modal__close,
+:root[data-theme="light"] .picker__nav {
+  color: #46495c;
+}
+
+:root[data-theme="light"] .chain__act:hover,
+:root[data-theme="light"] .icon-btn:hover,
+:root[data-theme="light"] .modal__close:hover {
+  color: #14161f;
+  background: rgba(30, 36, 60, 0.08);
+}
+
+:root[data-theme="light"] .tab {
+  background: rgba(255, 255, 255, 0.75);
+  border-color: rgba(30, 36, 60, 0.12);
+  color: #4c5065;
+}
+
+:root[data-theme="light"] .tab:hover {
+  color: #14161f;
+  border-color: rgba(30, 36, 60, 0.28);
+}
+
+:root[data-theme="light"] .tab.is-active {
+  background: linear-gradient(160deg, #059669, #047857);
+  border-color: transparent;
+  color: #ffffff;
+}
+
+:root[data-theme="light"] .tab.is-locked { color: #7a7f92; }
+
+:root[data-theme="light"] .tab.is-locked.is-active {
+  background: linear-gradient(160deg, #d97706, #b45309);
+  color: #ffffff;
+}
+
+/* Реплики Оракула: курсив светло-серым на белом не читался. */
+:root[data-theme="light"] .bubble--oracle {
+  background: linear-gradient(160deg, rgba(124, 77, 219, 0.1), rgba(124, 77, 219, 0.04));
+  border-color: rgba(124, 77, 219, 0.22);
+  color: #2f2350;
+}
+
+:root[data-theme="light"] .bubble--user {
+  background: linear-gradient(160deg, #059669, #047857);
+  border-color: transparent;
+  color: #ffffff;
+}
+
+:root[data-theme="light"] .bubble--guarded {
+  background: linear-gradient(160deg, rgba(217, 119, 6, 0.14), rgba(217, 119, 6, 0.05));
+  border-left-color: #b45309;
+  color: #4a3208;
+}
+
+:root[data-theme="light"] .task__note { color: #3a2a68; }
+
+:root[data-theme="light"] .chip--completed { color: #047857; border-color: rgba(4, 120, 87, 0.45); }
+:root[data-theme="light"] .chip--pending   { color: #4c5065; }
+:root[data-theme="light"] .chip--failed,
+:root[data-theme="light"] .chip--overdue   { color: #b91c1c; border-color: rgba(185, 28, 28, 0.4); }
+
+:root[data-theme="light"] .hours__seg {
+  background: #d97706;
+  box-shadow: none;
+}
+
+:root[data-theme="light"] .task--completed .hours__seg { background: rgba(4, 120, 87, 0.55); }
+
+:root[data-theme="light"] .stepper,
+:root[data-theme="light"] .picker__trigger {
+  background: rgba(255, 255, 255, 0.9);
+  border-color: rgba(30, 36, 60, 0.14);
+  box-shadow: inset 0 1px 2px rgba(38, 44, 70, 0.06);
+}
+
+:root[data-theme="light"] .stepper__btn {
+  background: rgba(30, 36, 60, 0.05);
+  color: #46495c;
+}
+
+:root[data-theme="light"] .stepper__btn:hover {
+  background: rgba(5, 150, 105, 0.16);
+  color: #04503a;
+}
+
+:root[data-theme="light"] .picker__panel {
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.99), rgba(246, 247, 252, 0.97));
+  box-shadow: 0 22px 50px rgba(38, 44, 70, 0.2);
+}
+
+:root[data-theme="light"] .picker__day { color: #3a3d4d; }
+:root[data-theme="light"] .picker__day:hover { background: rgba(30, 36, 60, 0.08); }
+:root[data-theme="light"] .picker__digits { color: #14161f; }
+:root[data-theme="light"] .picker__action { color: #46495c; background: rgba(30, 36, 60, 0.05); }
+:root[data-theme="light"] .picker__action--primary { background: #059669; color: #ffffff; border-color: transparent; }
+
+:root[data-theme="light"] .preview-bar {
+  border-color: rgba(180, 83, 9, 0.35);
+  background: linear-gradient(160deg, rgba(217, 119, 6, 0.14), rgba(217, 119, 6, 0.05));
+}
+
+:root[data-theme="light"] .preview-bar__text { color: #92400e; }
+
+:root[data-theme="light"] .chain__target-label { color: #92400e; }
+
+:root[data-theme="light"] .shop__tagline { color: #6234c0; }
+
+:root[data-theme="light"] .eyebrow,
+:root[data-theme="light"] .field__label,
+:root[data-theme="light"] .wallet__label,
+:root[data-theme="light"] .price,
+:root[data-theme="light"] .engine { color: #6a6e80; }
+
+:root[data-theme="light"] .panel__meta,
+:root[data-theme="light"] .setting__hint,
+:root[data-theme="light"] .shop__desc,
+:root[data-theme="light"] .chat__note { color: #52566a; }
+
+:root[data-theme="light"] .wallet__value,
+:root[data-theme="light"] .composer__reward-value,
+:root[data-theme="light"] .price__value,
+:root[data-theme="light"] .shop__price,
+:root[data-theme="light"] .task__reward { color: #b45309; }
+
+:root[data-theme="light"] .level { color: #047857; }
+
+/* ==========================================================================
+   КЛИКАБЕЛЬНОСТЬ
+   --------------------------------------------------------------------------
+   Всё, что можно нажать, должно отвечать на курсор до нажатия: подниматься,
+   светиться, менять кромку. Плоские поверхности без отклика читаются как
+   декорация — именно поэтому интерфейс выглядел мёртвым.
+   ========================================================================== */
+
+.btn,
+.tab,
+.icon-btn,
+.chain__act,
+.shop__card,
+.picker__day,
+.stepper__btn,
+.segmented__option,
+.modal__close {
+  -webkit-tap-highlight-color: transparent;
+}
+
+.btn::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: radial-gradient(120% 80% at 50% -20%, rgba(255, 255, 255, 0.3), transparent 60%);
+  opacity: 0;
+  transition: opacity 0.18s ease;
+  pointer-events: none;
+}
+
+.btn:hover:not(:disabled)::after { opacity: 1; }
+
+.btn:hover:not(:disabled) { transform: translateY(-2px); }
+.btn:active:not(:disabled) { transform: translateY(0) scale(0.97); }
+
+.tab {
+  transform: translateY(0);
+  transition: color 0.16s ease, border-color 0.16s ease,
+              background 0.16s ease, transform 0.16s ease, box-shadow 0.16s ease;
+}
+
+.tab:hover { transform: translateY(-1px); }
+
+.tab.is-active {
+  box-shadow: 0 6px 18px rgba(16, 185, 129, 0.25);
+}
+
+/* Карточка магазина приподнимается целиком: она сама по себе цель нажатия. */
+.shop__card {
+  transition: transform 0.18s cubic-bezier(0.34, 1.4, 0.64, 1),
+              border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.shop__card:hover {
+  transform: translateY(-3px);
+  border-color: rgba(139, 92, 246, 0.42);
+  box-shadow:
+    0 18px 36px rgba(0, 0, 0, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.16);
+}
+
+:root[data-theme="light"] .shop__card:hover {
+  box-shadow: 0 16px 30px rgba(38, 44, 70, 0.14);
+}
+
+.task {
+  transition: transform 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease;
+}
+
+.task:hover {
+  transform: translateX(2px);
+  border-color: rgba(255, 255, 255, 0.16);
+}
+
+:root[data-theme="light"] .task:hover { border-color: rgba(30, 36, 60, 0.2); }
+
+.chain__act {
+  transition: color 0.14s ease, border-color 0.14s ease,
+              background 0.14s ease, transform 0.14s ease;
+}
+
+.chain__act:hover { transform: scale(1.15); }
+
+.wallet {
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
+}
+
+.wallet:hover { transform: translateY(-1px); }
+
+.icon-btn:active { transform: rotate(120deg) scale(0.94); }
+
+/* Никаких правил на :hover для подсказки: указатель находится над сценой
+   всё время игры, и любое повышение прозрачности возвращало бы её обратно
+   поверх уже сработавшего автоскрытия. */
+
+/* ==========================================================================
+   ПРИОРИТЕТЫ И КАЛЕНДАРЬ КВЕСТОВ
+   ========================================================================== */
+
+.segmented--priority { width: 100%; }
+.segmented--priority .segmented__option { flex: 1; }
+
+/* Цвет активного приоритета несёт смысл: срочное — тревожное, спокойное —
+   приглушённое. Один и тот же зелёный для всех трёх обесценил бы выбор. */
+.segmented--priority[data-value="high"] .segmented__option.is-active {
+  background: linear-gradient(160deg, rgba(239, 68, 68, 0.34), rgba(239, 68, 68, 0.12));
+  color: #ffd9d9;
+}
+
+.segmented--priority[data-value="normal"] .segmented__option.is-active {
+  background: linear-gradient(160deg, rgba(16, 185, 129, 0.3), rgba(16, 185, 129, 0.1));
+  color: #d9fcef;
+}
+
+.segmented--priority[data-value="low"] .segmented__option.is-active {
+  background: linear-gradient(160deg, rgba(148, 163, 184, 0.3), rgba(148, 163, 184, 0.1));
+  color: #e2e8f0;
+}
+
+.chip--prio-high   { color: #fca5a5; border-color: rgba(239, 68, 68, 0.42); }
+.chip--prio-normal { color: var(--text-dim); }
+.chip--prio-low    { color: #a8b3c4; }
+
+.chip--penalty {
+  color: #fca5a5;
+  border-color: rgba(239, 68, 68, 0.5);
+  background: rgba(239, 68, 68, 0.12);
+}
+
+/* Левая кромка карточки — единственный указатель приоритета, который виден
+   при беглом просмотре списка сверху вниз. */
+.task--prio-high { box-shadow: inset 3px 0 0 rgba(239, 68, 68, 0.75); }
+.task--prio-low  { box-shadow: inset 3px 0 0 rgba(148, 163, 184, 0.5); }
+.task--failed    { opacity: 0.72; }
+.task--failed .task__title { color: var(--text-faint); }
+
+.task.is-flash {
+  animation: flash 1.3s ease;
+}
+
+@keyframes flash {
+  0%, 100% { box-shadow: inset 3px 0 0 transparent; }
+  30%      { box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.45); }
+}
+
+/* ---------------------------- календарь ---------------------------------- */
+
+.agenda {
+  padding: 4px 22px 20px;
+  border-top: 1px solid var(--glass-line);
+  margin-top: 4px;
+}
+
+.agenda__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 0 8px;
+}
+
+.agenda__month {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.agenda__nav {
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--glass-line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-faint);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  transition: color 0.14s ease, border-color 0.14s ease;
+}
+
+.agenda__nav:hover { color: var(--text); border-color: rgba(255, 255, 255, 0.28); }
+
+.agenda__weekdays,
+.agenda__grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 3px;
+}
+
+.agenda__weekdays {
+  margin-bottom: 4px;
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  text-align: center;
+}
+
+.agenda__day {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-height: 32px;
+  padding: 3px 0;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: none;
+  color: var(--text-faint);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease, transform 0.12s ease;
+}
+
+.agenda__day--empty { pointer-events: none; }
+
+.agenda__day:hover:not(.agenda__day--empty) {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text);
+  transform: scale(1.06);
+}
+
+.agenda__day.is-today {
+  border-color: rgba(139, 92, 246, 0.55);
+  color: var(--violet);
+}
+
+.agenda__day.has-tasks { color: var(--text); font-weight: 600; }
+
+.agenda__dots {
+  display: flex;
+  gap: 2px;
+  min-height: 4px;
+}
+
+.agenda__dot {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+}
+
+.agenda__dot--high   { background: #ef4444; }
+.agenda__dot--normal { background: #10b981; }
+.agenda__dot--low    { background: #94a3b8; }
+.agenda__dot--failed { background: #f59e0b; }
+.agenda__dot--done   { background: rgba(16, 185, 129, 0.4); }
+
+.agenda__legend {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
+  margin: 10px 0 0;
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.agenda__key {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  margin-left: 6px;
+}
+
+.agenda__key--high   { background: #ef4444; margin-left: 0; }
+.agenda__key--normal { background: #10b981; }
+.agenda__key--low    { background: #94a3b8; }
+.agenda__key--failed { background: #f59e0b; }
+
+:root[data-theme="light"] .agenda { border-top-color: rgba(30, 36, 60, 0.12); }
+:root[data-theme="light"] .agenda__day { color: #6a6e80; }
+:root[data-theme="light"] .agenda__day.has-tasks { color: #14161f; }
+:root[data-theme="light"] .agenda__day:hover:not(.agenda__day--empty) {
+  background: rgba(30, 36, 60, 0.08);
+}
+:root[data-theme="light"] .agenda__nav { color: #46495c; }
+:root[data-theme="light"] .chip--prio-high { color: #b91c1c; border-color: rgba(185, 28, 28, 0.4); }
+:root[data-theme="light"] .chip--prio-low { color: #52566a; }
+:root[data-theme="light"] .chip--penalty { color: #b91c1c; background: rgba(239, 68, 68, 0.1); }
+:root[data-theme="light"] .segmented--priority[data-value="high"] .segmented__option.is-active {
+  background: linear-gradient(160deg, #dc2626, #b91c1c); color: #ffffff;
+}
+:root[data-theme="light"] .segmented--priority[data-value="normal"] .segmented__option.is-active {
+  background: linear-gradient(160deg, #059669, #047857); color: #ffffff;
+}
+:root[data-theme="light"] .segmented--priority[data-value="low"] .segmented__option.is-active {
+  background: linear-gradient(160deg, #64748b, #475569); color: #ffffff;
+}
+
+/* ==========================================================================
+   ВЫПОЛНЕННЫЕ ДНИ И ПРИВЯЗКА КЛАВИШ
+   ========================================================================== */
+
+/* День, где всё закрыто: виден, но не тянет внимание. */
+.agenda__day.is-settled { color: var(--text-faint); opacity: 0.75; }
+
+.agenda__dot--done {
+  background: rgba(16, 185, 129, 0.38);
+  box-shadow: inset 0 0 0 1px rgba(16, 185, 129, 0.5);
+}
+
+.agenda__key--done { background: rgba(16, 185, 129, 0.45); }
+
+.keybinds { display: flex; gap: 8px; flex: 0 0 auto; }
+
+.keybind {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 7px 12px;
+  border: 1px solid var(--glass-line);
+  border-radius: 11px;
+  background: rgba(0, 0, 0, 0.22);
+  cursor: pointer;
+  transition: border-color 0.16s ease, background 0.16s ease, transform 0.14s ease;
+}
+
+.keybind:hover { transform: translateY(-1px); border-color: rgba(255, 255, 255, 0.3); }
+
+.keybind__label {
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.keybind__key {
+  min-width: 30px;
+  font-family: var(--font-mono);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+  text-align: center;
+}
+
+/* Кнопка ждёт нажатия: пульсация объясняет, что интерфейс слушает клавиатуру. */
+.keybind.is-listening {
+  border-color: rgba(16, 185, 129, 0.7);
+  background: rgba(16, 185, 129, 0.14);
+  animation: listen 1.1s ease-in-out infinite;
+}
+
+@keyframes listen {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.35); }
+  50%      { box-shadow: 0 0 0 6px rgba(16, 185, 129, 0); }
+}
+
+:root[data-theme="light"] .keybind {
+  background: rgba(255, 255, 255, 0.85);
+  border-color: rgba(30, 36, 60, 0.14);
+}
+
+:root[data-theme="light"] .keybind__key { color: #14161f; }
+:root[data-theme="light"] .agenda__day.is-settled { color: #9298ad; }
+
+/* ==========================================================================
+   УСЛОВИЯ ИСПОЛЬЗОВАНИЯ
+   --------------------------------------------------------------------------
+   Правовой текст набран узкой колонкой с увеличенным межстрочным
+   расстоянием: сплошной блок во всю ширину панели читается тяжело, и
+   пользователь закрывает его, не прочитав, — то есть предупреждение не
+   выполняет своей функции.
+   ========================================================================== */
+
+.terms {
+  padding: 4px 24px 24px;
+  overflow-y: auto;
+  min-height: 0;
+  flex: 1 1 auto;
+  max-width: 62ch;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+}
+
+.terms p {
+  margin: 0 0 16px;
+  font-size: 13px;
+  line-height: 1.65;
+  color: var(--text-dim);
+}
+
+.terms__head {
+  margin: 0 0 6px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--text);
+}
+
+/* Ссылка на полный текст остаётся заметной, но не спорит с самим
+   предупреждением за внимание. */
+.chat__more {
+  color: var(--violet);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.chat__more:hover { color: var(--text); }
+
+.chat__note {
+  line-height: 1.5;
+  max-width: 68ch;
+}
+
+:root[data-theme="light"] .terms p { color: #52566a; }
+:root[data-theme="light"] .chat__more { color: #6234c0; }
+
+/* Прошедшие даты в календаре недоступны: срок в прошлом означает заведомо
+   просроченный квест. Зачёркивание объясняет недоступность нагляднее, чем
+   одна лишь пониженная яркость. */
+.picker__day.is-past {
+  color: var(--text-faint);
+  opacity: 0.35;
+  text-decoration: line-through;
+  cursor: not-allowed;
+}
+
+.picker__day.is-past:hover { background: none; transform: none; }
+
+.picker__nav:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.picker__nav:disabled:hover {
+  color: var(--text-faint);
+  border-color: var(--glass-line);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+/* ==========================================================================
+   ПОМЕСЯЧНЫЙ ПРОГРЕСС
+   --------------------------------------------------------------------------
+   Высота столбца — доля доведённых до конца среди закрытых квестов,
+   насыщенность — абсолютное число закрытых. Одна лишь доля вводила бы в
+   заблуждение: месяц с единственным выполненным квестом дал бы такой же
+   столбец, как месяц с двадцатью.
+   ========================================================================== */
+
+.progress {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--glass-line);
+}
+
+.progress__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.progress__title {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.progress__hint {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.progress__chart {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  height: 96px;
+}
+
+.progress__col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  height: 100%;
+  cursor: default;
+}
+
+.progress__bar {
+  width: 100%;
+  min-height: 3px;
+  border-radius: 5px 5px 2px 2px;
+  background: linear-gradient(180deg, var(--emerald), rgba(16, 185, 129, 0.35));
+  transition: height 0.4s cubic-bezier(0.34, 1.2, 0.64, 1), opacity 0.3s ease;
+}
+
+.progress__col:hover .progress__bar { filter: brightness(1.25); }
+
+.progress__value,
+.progress__label {
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  letter-spacing: 0.04em;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.progress__label { text-transform: uppercase; }
+
+.progress__empty {
+  margin: 0;
+  align-self: center;
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+/* Действия над квестом собраны в группу и проявляются при наведении:
+   постоянно видимые кнопки спорили бы с названием за внимание. */
+.task__tools {
+  display: flex;
+  gap: 2px;
+  opacity: 0.35;
+  transition: opacity 0.16s ease;
+}
+
+.task:hover .task__tools { opacity: 1; }
+
+.task--failed .btn--complete {
+  border-color: rgba(245, 158, 11, 0.5);
+  color: #ffe0a8;
+}
+
+:root[data-theme="light"] .progress { border-top-color: rgba(30, 36, 60, 0.12); }
+:root[data-theme="light"] .progress__bar {
+  background: linear-gradient(180deg, #059669, rgba(5, 150, 105, 0.4));
+}
+:root[data-theme="light"] .progress__hint { color: #52566a; }
+:root[data-theme="light"] .task--failed .btn--complete {
+  background: linear-gradient(160deg, #d97706, #b45309);
+  border-color: transparent;
+  color: #ffffff;
+}
+
+/* ==========================================================================
+   КАЛЕНДАРЬ: ГОДЫ, РУЧНОЙ ВВОД ВРЕМЕНИ
+   ========================================================================== */
+
+.picker__head {
+  gap: 2px;
+}
+
+/* Разряды времени редактируются напрямую. Поле оформлено как текст, чтобы
+   не выглядеть формой внутри выпадающей панели, но принимает ввод. */
+input.picker__digits {
+  width: 38px;
+  padding: 2px 0;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: none;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 19px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  cursor: text;
+  transition: border-color 0.14s ease, background 0.14s ease;
+}
+
+input.picker__digits:hover { border-color: var(--glass-line); }
+
+input.picker__digits:focus {
+  outline: none;
+  border-color: rgba(16, 185, 129, 0.7);
+  background: rgba(16, 185, 129, 0.1);
+}
+
+/* Недопустимое время подсвечивается сразу, а не при попытке сохранить. */
+input.picker__digits.is-invalid {
+  border-color: rgba(239, 68, 68, 0.6);
+  background: rgba(239, 68, 68, 0.12);
+  color: #fca5a5;
+}
+
+.picker__warning {
+  margin: 8px 0 0;
+  padding: 6px 9px;
+  border-radius: 8px;
+  background: rgba(239, 68, 68, 0.14);
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #fca5a5;
+  text-align: center;
+}
+
+.picker__warning[hidden] { display: none; }
+
+.scene__note {
+  margin: 0;
+  flex: 1;
+  min-width: 180px;
+  font-size: 11.5px;
+  color: var(--text-faint);
+}
+
+:root[data-theme="light"] input.picker__digits { color: #14161f; }
+:root[data-theme="light"] input.picker__digits.is-invalid { color: #b91c1c; }
+:root[data-theme="light"] .picker__warning { color: #b91c1c; }
+
+/* ==========================================================================
+   ПЕРЕКЛЮЧАТЕЛЬ ЯЗЫКА
+   --------------------------------------------------------------------------
+   Кнопка показывает оба кода сразу: активный выделен, второй приглушён.
+   Так она одновременно сообщает текущее состояние и то, во что переключит,
+   не требуя подписи и не меняя ширину при переключении — а значит, соседние
+   элементы шапки не сдвигаются.
+   ========================================================================== */
+
+.lang-toggle {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 12px;
+  border: 1px solid var(--glass-line);
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  transition: transform 0.16s ease, border-color 0.16s ease;
+}
+
+.lang-toggle:hover {
+  transform: translateY(-1px);
+  border-color: rgba(255, 255, 255, 0.28);
+}
+
+.lang-toggle:active { transform: translateY(0) scale(0.96); }
+
+.lang-toggle__code {
+  color: var(--text-faint);
+  transition: color 0.2s ease, text-shadow 0.2s ease;
+}
+
+/* Подсвечивается код, совпадающий с текущим языком. Правило опирается на
+   атрибут кнопки, поэтому подписи остаются на своих местах, а меняется
+   только выделение — движение само объясняет, что произошло. */
+.lang-toggle[data-lang="ru"] [data-lang-code="ru"],
+.lang-toggle[data-lang="en"] [data-lang-code="en"] {
+  color: var(--emerald);
+  text-shadow: 0 0 12px rgba(16, 185, 129, 0.5);
+}
+
+/* Разделитель наклонён: вертикальная черта выглядела бы границей между
+   двумя кнопками, тогда как это одна. */
+.lang-toggle__sep {
+  width: 1px;
+  height: 12px;
+  transform: skewX(-18deg);
+  background: var(--glass-line);
+}
+
+:root[data-theme="light"] .lang-toggle {
+  border-color: rgba(30, 36, 60, 0.14);
+}
+
+:root[data-theme="light"] .lang-toggle__code { color: #7a7f92; }
+
+:root[data-theme="light"] .lang-toggle[data-lang="ru"] [data-lang-code="ru"],
+:root[data-theme="light"] .lang-toggle[data-lang="en"] [data-lang-code="en"] {
+  color: #047857;
+  text-shadow: none;
+}
+
+:root[data-theme="light"] .lang-toggle__sep { background: rgba(30, 36, 60, 0.18); }
+
+/* Шапка на узких экранах: переключатель уходит в общий ряд справа. */
+@media (max-width: 768px) {
+  .topbar__side { flex-wrap: wrap; }
+}
+
+/* Ссылка на полные условия вынесена отдельной строкой: набранная в подбор
+   с длинным правовым текстом, она терялась среди него. Оформлена как
+   кнопка, поскольку открывает окно, а не ведёт по адресу. */
+button.chat__more {
+  align-self: flex-start;
+  margin: -6px 0 0;
+  padding: 4px 10px;
+  border: 1px solid rgba(139, 92, 246, 0.42);
+  border-radius: 999px;
+  background: rgba(139, 92, 246, 0.12);
+  color: var(--violet);
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  text-decoration: none;
+  cursor: pointer;
+  transition: color 0.16s ease, border-color 0.16s ease, background 0.16s ease;
+}
+
+button.chat__more:hover {
+  color: var(--text);
+  border-color: rgba(139, 92, 246, 0.7);
+  background: rgba(139, 92, 246, 0.22);
+}
+
+/* Подвал беседы выстраивается в колонку: кнопка условий стоит под текстом,
+   а не конкурирует с ним за место в строке. */
+.chat__foot {
+  align-items: flex-start;
+}
+
+:root[data-theme="light"] button.chat__more {
+  color: #6234c0;
+  border-color: rgba(98, 52, 192, 0.4);
+  background: rgba(98, 52, 192, 0.08);
+}
+
+:root[data-theme="light"] button.chat__more:hover {
+  color: #3b1f78;
+  background: rgba(98, 52, 192, 0.16);
+}

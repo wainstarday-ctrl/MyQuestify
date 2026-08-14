@@ -1,0 +1,579 @@
+<!DOCTYPE html>
+<html lang="ru" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <!--
+    Offline-режим: ни одного внешнего запроса из документа.
+    'unsafe-inline' в style-src необходим намеренно: сцена подставляет
+    пользовательский фон через element.style, а это блокируется строгой
+    политикой. Риска нет — источник один и тот же локальный сервер.
+  -->
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'">
+  <title>MyQuestify</title>
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+
+  <!-- ===================== Экран загрузки ===================== -->
+  <div class="splash" id="splash">
+    <div class="splash__inner">
+      <span class="splash__mark" aria-hidden="true"></span>
+      <h1 class="splash__name">My<em>Questify</em></h1>
+      <p class="splash__tag" data-i18n="splash.tagline">часы превращаются в награду</p>
+      <blockquote class="splash__quote" id="splash-quote"></blockquote>
+      <cite class="splash__author" id="splash-author"></cite>
+      <span class="splash__bar" aria-hidden="true"><i></i></span>
+    </div>
+  </div>
+
+  <!-- Цветные пятна фона: отдельный слой, чтобы стеклу панелей было что преломлять. -->
+  <div class="aurora" aria-hidden="true">
+    <span class="aurora__blob aurora__blob--violet"></span>
+    <span class="aurora__blob aurora__blob--emerald"></span>
+    <span class="aurora__blob aurora__blob--warm"></span>
+  </div>
+
+  <!-- ===================== Шапка ===================== -->
+  <header class="topbar glass glass--bar">
+    <div class="brand">
+      <span class="brand__mark" aria-hidden="true"></span>
+      <div class="brand__text">
+        <h1 class="brand__name">My<em>Questify</em></h1>
+        <p class="brand__tag" data-i18n="brand.tagline">часы превращаются в награду</p>
+      </div>
+    </div>
+
+    <div class="wallet glass glass--chip" id="wallet">
+      <span class="wallet__label" data-i18n="wallet.label">Focus-токены</span>
+      <output class="wallet__value" id="token-value" aria-live="polite">0</output>
+    </div>
+
+    <div class="topbar__side">
+      <div class="engine" id="engine-status" data-state="checking">
+        <span class="engine__dot" aria-hidden="true"></span>
+        <span class="engine__text" id="engine-text" data-i18n="engine.checking">проверка модели…</span>
+      </div>
+      <button class="lang-toggle glass glass--chip" id="lang-toggle" type="button"
+              data-i18n-title="language.switch"
+              title="Переключить на английский" aria-label="Сменить язык">
+        <span class="lang-toggle__code" data-lang-code="ru">RU</span>
+        <span class="lang-toggle__sep" aria-hidden="true"></span>
+        <span class="lang-toggle__code" data-lang-code="en">EN</span>
+      </button>
+      <button class="icon-btn" id="open-settings" type="button"
+              data-i18n-title="settings.open"
+              title="Настройки" aria-label="Настройки">⚙</button>
+    </div>
+  </header>
+
+  <!-- ===================== Рабочая область ===================== -->
+  <main class="workspace">
+
+    <!-- ---------- Журнал квестов ---------- -->
+    <section class="panel panel--quests glass" aria-labelledby="quests-title">
+      <header class="panel__head">
+        <p class="eyebrow" data-i18n="quests.eyebrow">Журнал квестов</p>
+        <h2 class="panel__title" id="quests-title" data-i18n="quests.title">Задачи</h2>
+        <p class="panel__meta" id="quests-counter">—</p>
+      </header>
+
+      <div class="composer">
+        <div class="field field--wide">
+          <label class="field__label" for="task-title" data-i18n="composer.title.label">Что нужно сделать</label>
+          <input class="field__input" id="task-title" type="text" maxlength="200"
+                 placeholder="Например: собрать главу по архитектуре"
+                 data-i18n-placeholder="composer.title.placeholder" autocomplete="off">
+        </div>
+
+        <div class="field">
+          <label class="field__label" for="task-hours" data-i18n="composer.hours">Часов</label>
+          <input class="field__input field__input--num" id="task-hours" type="number"
+                 min="1" max="24" step="1" value="2" inputmode="numeric">
+        </div>
+
+        <div class="field field--wide">
+          <span class="field__label" data-i18n="composer.priority">Приоритет</span>
+          <div class="segmented segmented--priority" id="priority-switch">
+            <button class="segmented__option" type="button" data-priority="low"
+                    data-i18n-title="priority.low.hint" title="Награда ×0.8, штраф за срыв мягкий" data-i18n="priority.low">Спокойно</button>
+            <button class="segmented__option is-active" type="button" data-priority="normal"
+                    data-i18n-title="priority.normal.hint" title="Награда ×1, штраф за срыв половина награды" data-i18n="priority.normal">Обычно</button>
+            <button class="segmented__option" type="button" data-priority="high"
+                    data-i18n-title="priority.high.hint" title="Награда ×1.5, но срыв стоит половины этой награды" data-i18n="priority.high">Срочно</button>
+          </div>
+        </div>
+
+        <div class="field">
+          <label class="field__label" for="task-deadline" data-i18n="composer.deadline">Дедлайн</label>
+          <input class="field__input" id="task-deadline" type="datetime-local">
+        </div>
+
+        <div class="composer__foot">
+          <p class="composer__reward">
+            <span data-i18n="composer.reward">Награда:</span>
+            <span class="composer__reward-value" id="reward-preview">20</span>
+            <span class="composer__reward-unit">FT</span>
+          </p>
+          <button class="btn btn--primary" id="create-task" type="button">
+            <span class="btn__label" data-i18n="composer.submit">Принять квест</span>
+            <span class="btn__spinner" aria-hidden="true"></span>
+          </button>
+        </div>
+      </div>
+
+      <div class="tasks" id="tasks-root" aria-busy="true">
+        <p class="tasks__placeholder" data-i18n="tasks.loading">Загрузка задач…</p>
+      </div>
+
+      <div class="agenda">
+        <div class="agenda__head">
+          <button class="agenda__nav" id="agenda-prev" type="button"
+                  data-i18n-title="agenda.prev" aria-label="Предыдущий месяц">‹</button>
+          <span class="agenda__month" id="agenda-month">—</span>
+          <button class="agenda__nav" id="agenda-next" type="button"
+                  data-i18n-title="agenda.next" aria-label="Следующий месяц">›</button>
+        </div>
+        <div class="agenda__weekdays">
+          <span>Пн</span><span>Вт</span><span>Ср</span><span>Чт</span>
+          <span>Пт</span><span>Сб</span><span>Вс</span>
+        </div>
+        <div class="agenda__grid" id="agenda-grid"></div>
+        <div class="progress" id="progress-panel">
+          <div class="progress__head">
+            <span class="progress__title" data-i18n="progress.title">Прогресс по месяцам</span>
+            <span class="progress__hint" id="progress-summary">—</span>
+          </div>
+          <div class="progress__chart" id="progress-chart"></div>
+        </div>
+
+        <p class="agenda__legend">
+          <span class="agenda__key agenda__key--high"></span><span data-i18n="agenda.legend.high">срочно</span>
+          <span class="agenda__key agenda__key--normal"></span><span data-i18n="agenda.legend.normal">обычно</span>
+          <span class="agenda__key agenda__key--low"></span><span data-i18n="agenda.legend.low">спокойно</span>
+          <span class="agenda__key agenda__key--failed"></span><span data-i18n="agenda.legend.failed">просрочено</span>
+          <span class="agenda__key agenda__key--done"></span><span data-i18n="agenda.legend.done">сделано</span>
+        </p>
+      </div>
+    </section>
+
+    <!-- ---------- Правая колонка: сцена или Оракул ---------- -->
+    <section class="panel panel--scene glass" aria-labelledby="scene-title">
+      <header class="panel__head">
+        <p class="eyebrow" id="scene-eyebrow" data-i18n="scene.eyebrow">Сцена</p>
+        <h2 class="panel__title" id="scene-title">Сцена</h2>
+        <p class="panel__meta">
+          <span data-i18n="scene.level">Уровень</span>
+          <span class="level" id="tree-level">1</span>
+        </p>
+      </header>
+
+      <nav class="tabs tabs--view" aria-label="Режим правой панели">
+        <button class="tab is-active" type="button" data-view="scene">
+          <span class="tab__dot"></span><span data-i18n="scene.tab">Сцена</span>
+        </button>
+        <button class="tab" type="button" data-view="oracle">
+          <span class="tab__dot"></span><span data-i18n="oracle.tab">Оракул</span>
+        </button>
+      </nav>
+
+      <!-- Вид: интерактивная сцена -->
+      <div class="view" id="view-scene">
+        <nav class="tabs" id="scene-tabs" aria-label="Выбор сцены"></nav>
+
+        <div class="preview-bar" id="preview-bar" hidden>
+          <span class="preview-bar__text" id="preview-text"></span>
+          <div class="preview-bar__actions">
+            <button class="btn btn--accent btn--slim" id="preview-buy" type="button"
+                    data-buy="" data-price="0" data-i18n="preview.buy">Открыть</button>
+            <button class="btn btn--ghost btn--slim" id="preview-exit" type="button"
+                    data-i18n="preview.exit">Вернуться</button>
+          </div>
+        </div>
+
+        <div class="stage" id="scene-stage">
+          <canvas id="scene-canvas" aria-label="Интерактивная сцена"></canvas>
+          <p class="stage__hint" id="stage-hint"></p>
+          <p class="stage__fallback" id="stage-fallback" data-i18n="scene.fallback" hidden>
+            Физический движок не найден. Положи matter.min.js в static/js/vendor/ и перезапусти приложение.
+          </p>
+        </div>
+
+        <div class="scene__foot">
+          <p class="scene__note" data-i18n="scene.note">Каждая сцена откликается на завершённый квест по-своему.</p>
+          <div class="scene__actions">
+            <button class="btn btn--ghost" id="reset-scene" type="button"
+                    data-i18n-title="scene.reset.hint" title="Вернуть сцену в исходное состояние">
+              <span class="btn__label" data-i18n="scene.reset">Сбросить сцену</span>
+            </button>
+            <button class="btn btn--accent" id="open-shop" type="button">
+              <span class="btn__label" data-i18n="scene.shop">Магазин сцен</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Вид: чат с Оракулом -->
+      <div class="view" id="view-oracle" hidden>
+        <div class="chat" id="oracle-log" aria-live="polite">
+          <p class="tasks__placeholder" data-i18n="oracle.loading">Загрузка беседы…</p>
+        </div>
+        <div class="chat__composer">
+          <input class="field__input" id="oracle-input" type="text" maxlength="1000"
+                 placeholder="Спроси Оракула о своём пути…"
+                 data-i18n-placeholder="oracle.placeholder" autocomplete="off">
+          <button class="btn btn--accent" id="oracle-send" type="button">
+            <span class="btn__label" data-i18n="oracle.send">Спросить</span>
+            <span class="btn__spinner" aria-hidden="true"></span>
+          </button>
+        </div>
+        <div class="chat__foot">
+          <p class="chat__note">
+            <span data-i18n="oracle.note">Ответы Оракула генерирует языковая модель на этом
+            устройстве. Они носят общий информационный характер, могут содержать неточности
+            и не являются медицинской, психологической, юридической, финансовой или иной
+            профессиональной консультацией. Не используйте их как основание для решений,
+            затрагивающих здоровье, безопасность, имущество или права: в таких случаях
+            обращайтесь к квалифицированному специалисту.</span>
+          </p>
+          <button class="chat__more" id="oracle-terms" type="button"
+                  data-i18n="oracle.more">Подробнее</button>
+          <button class="link-btn" id="oracle-clear" type="button" data-i18n="oracle.clear">Очистить беседу</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- ===================== Магазин ===================== -->
+  <div class="modal" id="shop-modal" hidden>
+    <div class="modal__backdrop" data-close="shop"></div>
+    <div class="modal__panel glass" role="dialog" aria-modal="true" aria-labelledby="shop-title">
+      <header class="modal__head">
+        <div>
+          <p class="eyebrow" data-i18n="shop.eyebrow">Магазин</p>
+          <h2 class="modal__title" id="shop-title" data-i18n="shop.title">Интерактивные сцены</h2>
+        </div>
+        <button class="modal__close" type="button" data-close="shop" aria-label="Закрыть">×</button>
+      </header>
+      <div class="shop" id="shop-root">
+        <p class="tasks__placeholder" data-i18n="shop.loading">Загрузка витрины…</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== Цепочка мыслей ===================== -->
+  <div class="modal" id="thoughts-modal" hidden>
+    <div class="modal__backdrop" data-close="thoughts"></div>
+    <div class="modal__panel glass" role="dialog" aria-modal="true" aria-labelledby="thoughts-title">
+      <header class="modal__head">
+        <div>
+          <p class="eyebrow" data-i18n="chain.eyebrow">Цепочка мыслей</p>
+          <h2 class="modal__title" id="thoughts-title">Квест</h2>
+        </div>
+        <button class="modal__close" type="button" data-close="thoughts" aria-label="Закрыть">×</button>
+      </header>
+
+      <nav class="tabs tabs--chain" id="chain-modes" aria-label="Вид цепочки">
+        <button class="tab is-active" type="button" data-chain-mode="list">
+          <span class="tab__dot"></span><span data-i18n="chain.list">Список</span>
+        </button>
+        <button class="tab" type="button" data-chain-mode="web">
+          <span class="tab__dot"></span><span data-i18n="chain.web">Паутина</span>
+        </button>
+      </nav>
+
+      <div class="chain" id="thoughts-root">
+        <p class="tasks__placeholder" data-i18n="chain.loading">Загрузка цепочки…</p>
+      </div>
+
+      <div class="web" id="thoughts-web" hidden>
+        <canvas id="web-canvas" aria-label="Паутина рассуждений"></canvas>
+        <p class="stage__hint" id="web-hint" data-i18n="chain.webHint">Нажми на узел, чтобы вложить новую мысль в него. Узлы можно растаскивать.</p>
+      </div>
+
+      <div class="chain__composer">
+        <div class="chain__target" id="chain-target" hidden>
+          <span class="chain__target-label" data-i18n="chain.target">вложить в</span>
+          <span class="chain__target-name" id="chain-target-name"></span>
+          <button class="chain__target-clear" id="chain-target-clear" type="button"
+                  data-i18n-title="chain.clearTarget" aria-label="Снять выбор">×</button>
+        </div>
+        <input class="field__input" id="thought-input" type="text" maxlength="400"
+               placeholder="Новая мысль верхнего уровня…" autocomplete="off">
+        <button class="btn btn--ghost" id="thought-add" type="button">
+          <span class="btn__label" data-i18n="chain.add">Добавить</span>
+        </button>
+        <button class="btn btn--accent" id="thought-expand" type="button">
+          <span class="btn__label" data-i18n="chain.expand">Развернуть моделью</span>
+          <span class="btn__spinner" aria-hidden="true"></span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== Настройки ===================== -->
+  <div class="modal" id="settings-modal" hidden>
+    <div class="modal__backdrop" data-close="settings"></div>
+    <div class="modal__panel glass" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+      <header class="modal__head">
+        <div>
+          <p class="eyebrow" data-i18n="settings.eyebrow">Настройки</p>
+          <h2 class="modal__title" id="settings-title" data-i18n="settings.title">Интерфейс и напоминания</h2>
+        </div>
+        <button class="modal__close" type="button" data-close="settings" aria-label="Закрыть">×</button>
+      </header>
+
+      <div class="settings">
+        <div class="setting">
+          <div class="setting__text">
+            <p class="setting__name" data-i18n="settings.theme">Тема оформления</p>
+            <p class="setting__hint" data-i18n="settings.theme.hint">Стекло и подсветка перестраиваются под выбранный режим.</p>
+          </div>
+          <div class="segmented" id="theme-switch">
+            <button class="segmented__option" type="button" data-theme-value="dark" data-i18n="settings.theme.dark">Тёмная</button>
+            <button class="segmented__option" type="button" data-theme-value="light" data-i18n="settings.theme.light">Светлая</button>
+          </div>
+        </div>
+
+        <div class="setting">
+          <div class="setting__text">
+            <p class="setting__name" data-i18n="settings.language">Язык интерфейса</p>
+            <p class="setting__hint" data-i18n="settings.language.hint">
+              Задаёт и язык, на котором отвечает модель, включая фоновые
+              напоминания.
+            </p>
+          </div>
+          <div class="segmented" id="language-switch">
+            <button class="segmented__option" type="button" data-language="ru">Русский</button>
+            <button class="segmented__option" type="button" data-language="en">English</button>
+          </div>
+        </div>
+
+        <div class="setting">
+          <div class="setting__text">
+            <p class="setting__name" data-i18n="settings.notify">Напоминания о дедлайнах</p>
+            <p class="setting__hint" data-i18n="settings.notify.hint">
+              Приходят даже при закрытом окне: приложение сворачивается в трей
+              и продолжает работать. Полный выход — через меню значка.
+            </p>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="notify-toggle">
+            <span class="switch__track"><span class="switch__thumb"></span></span>
+          </label>
+        </div>
+
+        <div class="setting">
+          <div class="setting__text">
+            <p class="setting__name" data-i18n="settings.lead">Предупреждать заранее</p>
+            <p class="setting__hint" data-i18n="settings.lead.hint">За сколько минут до срока присылать напоминание.</p>
+          </div>
+          <input class="field__input field__input--num setting__num" id="notify-lead"
+                 type="number" min="5" max="1440" step="5" value="60">
+        </div>
+
+        <div class="setting">
+          <div class="setting__text">
+            <p class="setting__name" data-i18n="settings.hints">Подсказки к сценам</p>
+            <p class="setting__hint" data-i18n="settings.hints.hint">
+              Строка под сценой гаснет через пять секунд и возвращается при
+              смене сцены. Выключи, чтобы не появлялась вовсе.
+            </p>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="hints-toggle">
+            <span class="switch__track"><span class="switch__thumb"></span></span>
+          </label>
+        </div>
+
+        <div class="setting">
+          <div class="setting__text">
+            <p class="setting__name" data-i18n="settings.keys">Клавиши поворота</p>
+            <p class="setting__hint" data-i18n="settings.keys.hint">
+              Наклоняют взятый предмет в сценах — например, колбу в Лаборатории.
+              Нажми на поле и задай клавишу.
+            </p>
+          </div>
+          <div class="keybinds">
+            <button class="keybind" id="key-ccw" type="button" data-bind="ccw">
+              <span class="keybind__label" data-i18n="settings.keys.ccw">против</span>
+              <span class="keybind__key" id="key-ccw-value">Q</span>
+            </button>
+            <button class="keybind" id="key-cw" type="button" data-bind="cw">
+              <span class="keybind__label" data-i18n="settings.keys.cw">по часовой</span>
+              <span class="keybind__key" id="key-cw-value">E</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="setting">
+          <div class="setting__text">
+            <p class="setting__name" data-i18n="settings.motion">Меньше движения</p>
+            <p class="setting__hint" data-i18n="settings.motion.hint">Останавливает переливы фона. Физика сцен продолжает работать.</p>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="motion-toggle">
+            <span class="switch__track"><span class="switch__thumb"></span></span>
+          </label>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== Правка квеста ===================== -->
+  <div class="modal" id="edit-modal" hidden>
+    <div class="modal__backdrop" data-close="edit"></div>
+    <div class="modal__panel glass" role="dialog" aria-modal="true" aria-labelledby="edit-title">
+      <header class="modal__head">
+        <div>
+          <p class="eyebrow" data-i18n="edit.eyebrow">Изменение</p>
+          <h2 class="modal__title" id="edit-title" data-i18n="edit.title">Квест</h2>
+        </div>
+        <button class="modal__close" type="button" data-close="edit" aria-label="Закрыть">×</button>
+      </header>
+
+      <div class="composer composer--edit">
+        <div class="field field--wide">
+          <label class="field__label" for="edit-task-title" data-i18n="edit.name">Название</label>
+          <input class="field__input" id="edit-task-title" type="text" maxlength="200"
+                 autocomplete="off">
+        </div>
+
+        <div class="field">
+          <label class="field__label" for="edit-hours">Часов</label>
+          <input class="field__input field__input--num" id="edit-hours" type="number"
+                 min="1" max="24" step="1" value="2" inputmode="numeric">
+        </div>
+
+        <div class="field">
+          <label class="field__label" for="edit-deadline">Дедлайн</label>
+          <input class="field__input" id="edit-deadline" type="datetime-local">
+        </div>
+
+        <div class="field field--wide">
+          <span class="field__label">Приоритет</span>
+          <div class="segmented segmented--priority" id="edit-priority">
+            <button class="segmented__option" type="button" data-priority="low" data-i18n="priority.low">Спокойно</button>
+            <button class="segmented__option is-active" type="button" data-priority="normal" data-i18n="priority.normal">Обычно</button>
+            <button class="segmented__option" type="button" data-priority="high" data-i18n="priority.high">Срочно</button>
+          </div>
+        </div>
+
+        <div class="composer__foot">
+          <p class="composer__reward">
+            <span data-i18n="composer.reward">Награда:</span>
+            <span class="composer__reward-value" id="edit-reward">20</span>
+            <span class="composer__reward-unit">FT</span>
+          </p>
+          <button class="btn btn--primary" id="edit-save" type="button">
+            <span class="btn__label" data-i18n="edit.save">Сохранить</span>
+            <span class="btn__spinner" aria-hidden="true"></span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== Условия использования Оракула ===================== -->
+  <div class="modal" id="terms-modal" hidden>
+    <div class="modal__backdrop" data-close="terms"></div>
+    <div class="modal__panel glass" role="dialog" aria-modal="true" aria-labelledby="terms-title">
+      <header class="modal__head">
+        <div>
+          <p class="eyebrow" data-i18n="terms.eyebrow">Условия использования</p>
+          <h2 class="modal__title" id="terms-title" data-i18n="terms.title">Чат с Оракулом</h2>
+        </div>
+        <button class="modal__close" type="button" data-close="terms" aria-label="Закрыть">×</button>
+      </header>
+
+      <div class="terms">
+        <h3 class="terms__head" data-i18n="terms.h1">Характер сервиса</h3>
+        <p data-i18n="terms.p1">
+          «Чат с Оракулом» — развлекательная функция приложения MyQuestify.
+          Ответы формируются языковой моделью, работающей локально на устройстве
+          пользователя, путём статистического продолжения текста. Модель не
+          обладает знаниями о конкретной ситуации пользователя, не проверяет
+          факты и может выдавать сведения, не соответствующие действительности.
+        </p>
+
+        <h3 class="terms__head" data-i18n="terms.h2">Отсутствие профессиональной консультации</h3>
+        <p data-i18n="terms.p2">
+          Материалы, полученные в этом разделе, предоставляются «как есть»,
+          носят исключительно общий информационный характер и не являются
+          медицинской, психологической, психотерапевтической, юридической,
+          налоговой, финансовой, инвестиционной, образовательной или иной
+          профессиональной консультацией. Взаимодействие с функцией не создаёт
+          отношений «врач — пациент», «адвокат — доверитель», «консультант —
+          клиент» или иных отношений, предполагающих профессиональную
+          ответственность.
+        </p>
+
+        <h3 class="terms__head" data-i18n="terms.h3">Решения пользователя</h3>
+        <p data-i18n="terms.p3">
+          Пользователь принимает решения самостоятельно и несёт за них
+          ответственность. Ответы Оракула не следует использовать как основание
+          для действий, затрагивающих жизнь и здоровье, безопасность, имущество,
+          права и обязанности, а также для отказа от обращения к специалисту или
+          от следования ранее полученным профессиональным рекомендациям.
+        </p>
+
+        <h3 class="terms__head" data-i18n="terms.h4">Ограничение ответственности</h3>
+        <p data-i18n="terms.p4">
+          Разработчик не гарантирует точность, полноту, актуальность или
+          пригодность ответов для каких-либо целей и не несёт ответственности за
+          прямые или косвенные убытки, возникшие вследствие их использования, в
+          пределах, допускаемых применимым правом.
+        </p>
+
+        <h3 class="terms__head" data-i18n="terms.h5">Экстренные ситуации</h3>
+        <p data-i18n="terms.p5">
+          Функция не предназначена для использования в неотложных ситуациях. При
+          угрозе жизни или здоровью следует незамедлительно обратиться в службу
+          экстренной помощи или к медицинскому работнику.
+        </p>
+
+        <h3 class="terms__head" data-i18n="terms.h6">Данные</h3>
+        <p data-i18n="terms.p6">
+          Переписка сохраняется в локальной базе данных на устройстве
+          пользователя и не передаётся третьим лицам. Историю можно удалить
+          кнопкой «Очистить беседу».
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== Уведомления ===================== -->
+  <div class="toasts" id="toasts" role="status" aria-live="polite"></div>
+
+  <!--
+    Подключение библиотек. Все файлы локальные: режим работы приложения
+    исключает обращения к сетям доставки содержимого.
+
+    Порядок загрузки обязателен и определяется зависимостями:
+      1) matter.min.js  — физический движок, к моменту загрузки ядра должен
+                          быть определён глобальный объект Matter;
+      2) stage.js       — ядро сцен: холст, цикл кадров, ввод, реестр сцен;
+      3) scenes*.js     — сцены, регистрирующиеся в реестре ядра;
+      4) thoughtweb.js  — граф цепочки мыслей, независимый модуль;
+      5) controls.js    — собственные элементы ввода;
+      6) splash.js      — экран загрузки;
+      7) app.js         — прикладная логика, использующая всё перечисленное.
+
+    Интерфейс написан на Vanilla JS без React или Vue: приложение
+    однооконное, состояние помещается в один объект, а отказ от сборщика
+    избавляет от этапа компиляции и от каталога node_modules в поставке.
+  -->
+  <script src="/static/js/vendor/matter.min.js"></script>
+  <script src="/static/js/i18n.js"></script>
+  <script src="/static/js/stage.js"></script>
+  <script src="/static/js/scenes.js"></script>
+  <script src="/static/js/scenes2.js"></script>
+  <script src="/static/js/scene-lab.js"></script>
+  <script src="/static/js/thoughtweb.js"></script>
+  <script src="/static/js/controls.js"></script>
+  <script src="/static/js/splash.js"></script>
+  <script src="/static/js/app.js"></script>
+</body>
+</html>

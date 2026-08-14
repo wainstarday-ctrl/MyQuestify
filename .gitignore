@@ -1,0 +1,30 @@
+# Виртуальное окружение и сборка
+.venv/
+build/
+dist/
+*.spec.bak
+
+# Байткод
+__pycache__/
+*.py[cod]
+
+# Данные пользователя (создаются при запуске из исходников)
+myquestify.db
+myquestify.db-wal
+myquestify.db-shm
+myquestify.log*
+uploads/
+
+# Веса модели: сотни МБ, в git им не место
+models/*.gguf
+
+# Сгенерированная иконка
+assets/icon.ico
+
+# Скриншоты хранятся в репозитории намеренно: они нужны README и меняются
+# редко. Исключение из общего правила о бинарных файлах.
+!docs/screenshots/*.png
+
+# IDE
+.vscode/
+.idea/

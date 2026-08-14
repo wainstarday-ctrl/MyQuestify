@@ -1,0 +1,92 @@
+name: Build Windows EXE
+
+# Два способа запуска:
+#   1. Пуш тега вида v1.0.0 — сборка и публикация в Releases.
+#   2. Кнопка "Run workflow" во вкладке Actions — сборка без релиза,
+#      результат лежит в артефактах запуска 90 дней.
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write   # нужно, чтобы создать релиз и приложить к нему файл
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Забрать код
+        uses: actions/checkout@v4
+
+      - name: Поставить Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Проверить, что вендорные библиотеки на месте
+        shell: pwsh
+        run: |
+          if (-not (Test-Path 'static/js/vendor/matter.min.js')) {
+            Write-Error 'static/js/vendor/matter.min.js отсутствует в репозитории. Файл обязан быть закоммичен, иначе в сборке не будет физического движка.'
+            exit 1
+          }
+          Write-Host 'matter.min.js на месте'
+
+      - name: Установить зависимости
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller pillow
+
+      - name: Сгенерировать иконку
+        run: python tools/make_icon.py
+
+      - name: Собрать .exe
+        env:
+          # llama-cpp-python на CI не ставится: сборка из исходников занимает
+          # десятки минут и регулярно падает. Релизный .exe идёт с резервными
+          # фразами; локальная модель подключается пользователем через
+          # %LOCALAPPDATA%\MyQuestify\models\model.gguf.
+          MYQUESTIFY_NO_LLM: '1'
+        run: pyinstaller MyQuestify.spec --noconfirm --clean
+
+      - name: Проверить результат
+        shell: pwsh
+        run: |
+          $exe = 'dist/MyQuestify.exe'
+          if (-not (Test-Path $exe)) { Write-Error "Файл не собран: $exe"; exit 1 }
+          $size = [math]::Round((Get-Item $exe).Length / 1MB, 1)
+          Write-Host "Собрано: $exe ($size МБ)"
+
+      - name: Приложить к запуску (артефакт)
+        uses: actions/upload-artifact@v4
+        with:
+          name: MyQuestify-exe
+          path: dist/MyQuestify.exe
+          retention-days: 90
+
+      - name: Опубликовать релиз
+        # Только для тегов: ручной запуск релиз не создаёт.
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" `
+            "dist/MyQuestify.exe" `
+            --title "MyQuestify ${{ github.ref_name }}" `
+            --notes @"
+          Сборка под Windows x64, один файл.
+
+          **Перед запуском**
+          - Нужен Microsoft Edge WebView2 Runtime (на Windows 11 уже установлен).
+          - Данные приложения: ``%LOCALAPPDATA%\MyQuestify``
+
+          **Локальная модель (необязательно)**
+          Положить файл GGUF как ``%LOCALAPPDATA%\MyQuestify\models\model.gguf``.
+          Без него используются резервные фразы — приложение полностью рабочее.
+          "@

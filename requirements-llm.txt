@@ -1,0 +1,8 @@
+# Локальная генерация мотивации. Ставится отдельно и только при необходимости.
+#
+# Требуется: MSVC Build Tools (C++) и CMake в PATH.
+# Готовые колёса без компиляции (быстрее и надёжнее):
+#   pip install llama-cpp-python --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu
+#
+# Без этого пакета приложение работает на резервных фразах.
+llama-cpp-python>=0.2.60
