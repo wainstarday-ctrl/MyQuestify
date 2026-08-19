@@ -20,7 +20,6 @@
   if (!global.Stage) { return; }
 
   var TAU = Math.PI * 2;
-  function tr(key, fallback) { return global.I18n ? global.I18n.t(key, fallback) : fallback; }
 
   global.Stage.register('lab', function (env) {
     var draw = env.draw;
@@ -739,14 +738,14 @@
           ctx.textAlign = 'center';
           ctx.fillStyle = u.rgba(flask.rgb, 0.85);
           ctx.fillText(
-            tr('scene.lab.reagent.' + flask.kind, REAGENTS[flask.kind].name) + ' · ' + Math.round(flask.fill * 100) + '%',
+            REAGENTS[flask.kind].name + ' · ' + Math.round(flask.fill * 100) + '%',
             flask.x, benchY + 18
           );
 
           if (flask === dragged && Math.abs(flask.angle) < 0.06) {
             ctx.fillStyle = 'rgba(210, 245, 255, 0.8)';
             ctx.fillText(
-              keys.ccw.replace('Key', '') + ' / ' + keys.cw.replace('Key', '') + ' — ' + tr('scene.lab.tilt', 'наклон'),
+              keys.ccw.replace('Key', '') + ' / ' + keys.cw.replace('Key', '') + ' — наклон',
               flask.x, flask.y - flask.h / 2 - 14
             );
           }
@@ -822,7 +821,7 @@
           ctx.shadowColor = 'rgba(255, 220, 120, 0.9)';
           ctx.shadowBlur = 14;
           ctx.fillStyle = 'rgba(255, 248, 214, ' + label.life.toFixed(2) + ')';
-          ctx.fillText(tr('scene.lab.label.' + ({'Пена!':'foam','Дым!':'smoke','Вспышка!':'flash','Кристаллы!':'crystal','Кипение!':'bubble'}[label.text] || ''), label.text), 0, 0);
+          ctx.fillText(label.text, 0, 0);
           ctx.restore();
         });
 

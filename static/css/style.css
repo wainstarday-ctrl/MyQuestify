@@ -3105,3 +3105,210 @@ button.chat__more:hover {
   color: #3b1f78;
   background: rgba(98, 52, 192, 0.16);
 }
+
+/* ==========================================================================
+   ЭКРАННЫЕ КНОПКИ ПОВОРОТА
+   --------------------------------------------------------------------------
+   Появляются только на сенсорных устройствах и только для сцен, принимающих
+   нажатия клавиш. Размер выбран не декоративно: 56 пикселей — принятый
+   минимум для надёжного попадания пальцем, при меньшем растёт доля промахов.
+   ========================================================================== */
+
+.touch-keys {
+  position: absolute;
+  right: 10px;
+  bottom: 52px;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.touch-keys[hidden] { display: none; }
+
+.touch-keys__btn {
+  width: 56px;
+  height: 56px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 50%;
+  background: rgba(12, 16, 22, 0.62);
+  backdrop-filter: blur(12px) saturate(160%);
+  -webkit-backdrop-filter: blur(12px) saturate(160%);
+  color: rgba(235, 245, 255, 0.9);
+  font-size: 26px;
+  line-height: 1;
+  cursor: pointer;
+  /* Касание не должно ни выделять текст, ни вызывать подсветку системы:
+     и то, и другое отвлекает от сцены и выглядит сбоем. */
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: none;
+  transition: transform 0.1s ease, background 0.14s ease, border-color 0.14s ease;
+}
+
+.touch-keys__btn.is-held {
+  transform: scale(0.92);
+  border-color: rgba(16, 185, 129, 0.7);
+  background: rgba(16, 185, 129, 0.28);
+}
+
+.touch-keys__glyph { pointer-events: none; }
+
+:root[data-theme="light"] .touch-keys__btn {
+  background: rgba(255, 255, 255, 0.78);
+  border-color: rgba(30, 36, 60, 0.18);
+  color: #1a1b22;
+}
+
+:root[data-theme="light"] .touch-keys__btn.is-held {
+  background: rgba(5, 150, 105, 0.28);
+  border-color: rgba(5, 150, 105, 0.6);
+}
+
+/* ==========================================================================
+   ТЕЛЕФОН
+   --------------------------------------------------------------------------
+   Правила ниже включаются на узких экранах и на устройствах с грубым
+   указателем. Второе условие существенно: планшет бывает шире порога, но
+   пальцем на нём работают так же, и мелкие цели остаются неудобными.
+   ========================================================================== */
+
+@media (max-width: 560px), (pointer: coarse) and (max-width: 900px) {
+  /* Отступы под вырез экрана и жестовую полосу. Без них шапка уходит под
+     камеру, а нижние кнопки — под системную полосу. */
+  body {
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+  }
+
+  .topbar {
+    grid-template-columns: 1fr auto;
+    gap: 10px;
+    padding: 10px 14px;
+    margin: 0;
+    border-radius: 0;
+  }
+
+  /* Подпись под названием на узком экране только занимает строку. */
+  .brand__tag { display: none; }
+  .brand__mark { width: 28px; height: 28px; }
+  .brand__name { font-size: 17px; }
+
+  .wallet { padding: 4px 10px; }
+  .wallet__value { font-size: 19px; }
+
+  /* Состояние модели уходит в третий ряд: в одну строку с кошельком и
+     кнопками оно не помещается и ломает шапку. */
+  .topbar__side {
+    grid-column: 1 / -1;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .engine { font-size: 9px; }
+
+  .workspace {
+    grid-template-columns: 1fr;
+    gap: 12px;
+    padding: 12px 10px 24px;
+  }
+
+  .panel { border-radius: 16px; }
+  .panel__head { padding: 14px 16px 12px; }
+  .panel__title { font-size: 16px; }
+
+  .composer { padding: 4px 16px 16px; gap: 12px; }
+  .tasks { padding: 0 16px 16px; max-height: none; }
+  .agenda { padding: 4px 16px 16px; }
+
+  /* Сцена занимает почти всю высоту окна: она главная часть приложения, и
+     на узком экране половина высоты делает её нечитаемой. */
+  .stage {
+    margin: 10px 14px 14px;
+    aspect-ratio: auto;
+    height: 62vh;
+    min-height: 280px;
+  }
+
+  .tabs, .tabs--view { padding: 0 16px 6px; gap: 6px; }
+
+  .tab {
+    padding: 8px 12px;
+    font-size: 10px;
+    /* Цель для пальца: строка вкладок иначе требует прицеливания. */
+    min-height: 36px;
+  }
+
+  .scene__foot { padding: 0 16px 16px; }
+  .scene__note { display: none; }
+  .scene__actions { width: 100%; }
+  .scene__actions .btn { flex: 1; }
+
+  /* Кнопки в целом крупнее: 44 пикселя — минимальная высота, при которой
+     палец попадает без прицеливания. */
+  .btn { min-height: 44px; padding: 10px 16px; }
+  .icon-btn { width: 40px; height: 40px; }
+  .lang-toggle { padding: 8px 10px; }
+
+  /* Поля ввода не должны быть мельче 16 пикселей: при меньшем размере
+     встроенный браузер увеличивает страницу при установке курсора. */
+  .field__input, .picker__trigger, .stepper .field__input {
+    font-size: 16px;
+  }
+
+  .stepper__btn { width: 48px; }
+
+  .chat { height: 52vh; padding: 6px 16px 12px; }
+  .chat__composer { padding: 0 16px 10px; }
+  .chat__foot { padding: 0 16px 16px; }
+  .bubble { max-width: 92%; }
+
+  /* Окна занимают экран целиком: рамка вокруг маленького окна на телефоне
+     только сокращает полезную площадь. */
+  .modal { padding: 0; align-items: stretch; }
+
+  .modal__panel {
+    width: 100%;
+    max-width: none;
+    max-height: 100%;
+    border-radius: 0;
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  /* Перетаскивание окна на телефоне лишено смысла: окно и так во весь
+     экран, а жест мешает прокрутке содержимого. */
+  .modal__head { cursor: default; }
+
+  .shop { grid-template-columns: 1fr; padding: 8px 16px 20px; }
+  .settings { padding: 4px 16px 20px; }
+  .setting { flex-direction: column; align-items: flex-start; gap: 10px; }
+  .terms { padding: 4px 16px 20px; max-width: none; }
+  .chain { padding: 4px 16px 12px; max-height: none; }
+  .chain__composer { padding: 0 16px 16px; }
+  .web { margin: 0 16px 12px; height: 56vh; }
+
+  /* Календарь: ячейки крупнее, чтобы попадать пальцем. */
+  .agenda__day { min-height: 40px; font-size: 12.5px; }
+  .picker__day { height: 40px; }
+  .picker__panel { width: calc(100vw - 24px); }
+
+  .toasts { left: 12px; right: 12px; bottom: 12px; max-width: none; }
+
+  /* Экран загрузки: цитата на узком экране требует меньшего кегля, иначе
+     занимает всю высоту и теряет вид высказывания. */
+  .splash__name { font-size: 30px; }
+  .splash__quote { font-size: 15px; margin-top: 28px; }
+  .progress__chart { height: 78px; }
+}
+
+/* Горизонтальная ориентация телефона: высоты мало, поэтому сцена
+   ограничивается, а не растёт вместе с окном. */
+@media (pointer: coarse) and (max-height: 500px) {
+  .stage { height: 78vh; min-height: 200px; }
+  .chat { height: 60vh; }
+  .splash__quote { display: none; }
+}

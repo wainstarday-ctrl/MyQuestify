@@ -61,7 +61,7 @@
       'task.until': 'due',
       'status.pending': 'in progress',
       'status.completed': 'completed',
-      'status.failed': 'overdue',
+      'status.failed': 'failed',
       'status.overdue': 'overdue',
       'tasks.loading': 'Loading tasks…',
       'tasks.empty': 'No quests yet. Describe the first one and the model will add a word of encouragement.',
@@ -98,22 +98,6 @@
       'scene.fallback': 'Physics engine not found. Put matter.min.js into static/js/vendor/ and restart the application.',
       'scene.resetDone': 'has been returned to its initial state.',
       'scene.unavailable': 'Scene unavailable.',
-      'scene.hint.garden': 'Tap the crown and the fruit will fall. You can catch it and throw it.',
-      'scene.hint.volcano': 'Press and hold the crater and lava will flow. The drops cool on the slope.',
-      'scene.hint.cosmos': 'Drag a planet onto another orbit and the two swap places. Drop it short and it returns to its own.',
-      'scene.hint.desk': 'Grab things and fling them around. A click on empty space shoves everything nearby.',
-      'scene.hint.clockwork': 'Grab a gear and give it a spin. A small one turns a large one with effort, a large one whips the small ones into a whirl.',
-      'scene.hint.pond': 'Sweep across the water: ripples spread and push the lilies apart. The leaves can be picked up.',
-      'scene.hint.weave': 'Pull any node and the net tightens and resists. Let go and it springs back into balance.',
-      'scene.hint.campfire': 'Press near the top to toss up a log. Sweep your hand by the fire to fan the flames and swirl the sparks.',
-      'scene.hint.lab': 'Take a flask with the mouse and tilt it with the keys. Pour it into a neighbour and the reagents react.',
-      'scene.cosmos.mercury': 'Mercury', 'scene.cosmos.venus': 'Venus', 'scene.cosmos.earth': 'Earth', 'scene.cosmos.mars': 'Mars',
-      'scene.cosmos.jupiter': 'Jupiter', 'scene.cosmos.saturn': 'Saturn', 'scene.cosmos.uranus': 'Uranus', 'scene.cosmos.neptune': 'Neptune',
-      'scene.campfire.fuel': 'FUEL', 'scene.lab.tilt': 'tilt',
-      'scene.lab.reagent.azure': 'azure', 'scene.lab.reagent.crimson': 'crimson', 'scene.lab.reagent.verdant': 'verdant',
-      'scene.lab.reagent.amber': 'amber', 'scene.lab.reagent.violet': 'violet', 'scene.lab.reagent.ash': 'ash', 'scene.lab.reagent.pearl': 'pearl',
-      'scene.lab.label.foam': 'Foam!', 'scene.lab.label.smoke': 'Smoke!', 'scene.lab.label.flash': 'Flash!',
-      'scene.lab.label.crystal': 'Crystals!', 'scene.lab.label.bubble': 'Boiling!',
 
       // ---- магазин ----
       'shop.eyebrow': 'Shop',
@@ -241,6 +225,7 @@
       'toast.keyKind': 'Use a letter, digit, arrow or space.',
       'toast.leadRange': 'The warning can be from 5 minutes to a day.',
       'toast.language': 'Interface language switched to English.',
+      'toast.notifyDenied': 'Notifications are blocked in the device settings.',
 
       // ---- экран загрузки ----
       'splash.tagline': 'hours turn into reward'

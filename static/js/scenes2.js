@@ -16,7 +16,6 @@
   if (!global.Stage) { return; }
 
   var TAU = Math.PI * 2;
-  function tr(key, fallback) { return global.I18n ? global.I18n.t(key, fallback) : fallback; }
 
   // ======================================================================= //
   // МЕХАНИЗМ ВРЕМЕНИ                                                        //
@@ -1582,7 +1581,7 @@
         ctx.font = '600 9px "Cascadia Mono", Consolas, monospace';
         ctx.textAlign = 'right';
         ctx.fillStyle = 'rgba(255, 210, 150, 0.6)';
-        ctx.fillText(tr('scene.campfire.fuel', 'ТОПЛИВО'), barX + barWidth, barY - 4);
+        ctx.fillText('ТОПЛИВО', barX + barWidth, barY - 4);
 
         draw.vignette(ctx, width, height, 0.58);
       },

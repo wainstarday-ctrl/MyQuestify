@@ -24,7 +24,6 @@
   if (!global.Stage) { return; }
 
   var TAU = Math.PI * 2;
-  function tr(key, fallback) { return global.I18n ? global.I18n.t(key, fallback) : fallback; }
 
   // ======================================================================= //
   // САД ВДОХНОВЕНИЯ                                                         //
@@ -762,21 +761,21 @@
      * ледяные».
      */
     var SOLAR = [
-      { key: 'mercury', name: 'Меркурий', light: '#c9c2b8', dark: '#5a5049', size: 0.42,
+      { name: 'Меркурий', light: '#c9c2b8', dark: '#5a5049', size: 0.42,
         texture: 'craters', ring: null, moons: 0, tilt: 0.02 },
-      { key: 'venus', name: 'Венера', light: '#f5d9a0', dark: '#a8763a', size: 0.62,
+      { name: 'Венера', light: '#f5d9a0', dark: '#a8763a', size: 0.62,
         texture: 'clouds', ring: null, moons: 0, tilt: 0.05 },
-      { key: 'earth', name: 'Земля', light: '#7ec4f0', dark: '#12467a', size: 0.66,
+      { name: 'Земля', light: '#7ec4f0', dark: '#12467a', size: 0.66,
         texture: 'earth', ring: null, moons: 1, tilt: 0.41 },
-      { key: 'mars', name: 'Марс', light: '#e8865a', dark: '#8a3315', size: 0.52,
+      { name: 'Марс', light: '#e8865a', dark: '#8a3315', size: 0.52,
         texture: 'craters', ring: null, moons: 2, tilt: 0.44 },
-      { key: 'jupiter', name: 'Юпитер', light: '#f0d3a8', dark: '#9a6534', size: 1.0,
+      { name: 'Юпитер', light: '#f0d3a8', dark: '#9a6534', size: 1.0,
         texture: 'bands', ring: null, moons: 3, tilt: 0.05 },
-      { key: 'saturn', name: 'Сатурн', light: '#f3dfb0', dark: '#a3803f', size: 0.9,
+      { name: 'Сатурн', light: '#f3dfb0', dark: '#a3803f', size: 0.9,
         texture: 'bands', ring: 'rgba(240, 222, 180, 0.75)', moons: 2, tilt: 0.47 },
-      { key: 'uranus', name: 'Уран', light: '#b8ecef', dark: '#2c7f8c', size: 0.74,
+      { name: 'Уран', light: '#b8ecef', dark: '#2c7f8c', size: 0.74,
         texture: 'smooth', ring: 'rgba(190, 235, 240, 0.35)', moons: 1, tilt: 1.7 },
-      { key: 'neptune', name: 'Нептун', light: '#7ea6f5', dark: '#1c357f', size: 0.72,
+      { name: 'Нептун', light: '#7ea6f5', dark: '#1c357f', size: 0.72,
         texture: 'storm', ring: null, moons: 1, tilt: 0.49 }
     ];
 
@@ -835,7 +834,6 @@
             radius: 0,
             style: preset,
             name: preset.name,
-            key: preset.key,
             free: null,
             returnFrom: null,
             returnT: 1,
@@ -1226,7 +1224,7 @@
             ctx.fillStyle = planet === dragged
               ? 'rgba(220, 240, 255, 0.95)'
               : 'rgba(200, 216, 240, 0.42)';
-            ctx.fillText(tr('scene.cosmos.' + planet.key, planet.name), pos.x, pos.y + radius + 13);
+            ctx.fillText(planet.name, pos.x, pos.y + radius + 13);
           }
 
           // Спутники: их число задано стилем планеты, а не размером — так

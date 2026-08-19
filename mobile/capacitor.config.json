@@ -1,0 +1,19 @@
+{
+  "appId": "com.myquestify.app",
+  "appName": "MyQuestify",
+  "webDir": "www",
+  "android": {
+    "allowMixedContent": false,
+    "captureInput": true,
+    "webContentsDebuggingEnabled": true
+  },
+  "plugins": {
+    "LocalNotifications": {
+      "smallIcon": "ic_stat_icon",
+      "iconColor": "#10b981"
+    }
+  },
+  "server": {
+    "androidScheme": "https"
+  }
+}

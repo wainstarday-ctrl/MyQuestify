@@ -1,0 +1,160 @@
+/**
+ * Сборка мобильной версии из общих исходников.
+ *
+ * Интерфейс не дублируется: файлы копируются из корня проекта, а различия
+ * между настольной и мобильной версией сводятся к трём правкам страницы.
+ * Копия вместо ручного дублирования выбрана намеренно — любая правка
+ * интерфейса иначе требовала бы повторения в двух местах, и версии
+ * разошлись бы на первой же неделе.
+ *
+ * Запуск из каталога mobile:
+ *     node build.js
+ */
+
+'use strict';
+
+const fs = require('fs');
+const path = require('path');
+
+const ROOT = path.join(__dirname, '..');
+const OUT = path.join(__dirname, 'www');
+
+/** Каталоги и файлы, переносимые без изменений. */
+const ASSETS = [
+  ['static/css', 'static/css'],
+  ['static/js', 'static/js'],
+  ['static/favicon.svg', 'static/favicon.svg']
+];
+
+/**
+ * Рекурсивно копирует каталог или файл.
+ *
+ * @param {string} from источник
+ * @param {string} to назначение
+ */
+function copy(from, to) {
+  const stat = fs.statSync(from);
+
+  if (stat.isDirectory()) {
+    fs.mkdirSync(to, { recursive: true });
+    for (const name of fs.readdirSync(from)) {
+      copy(path.join(from, name), path.join(to, name));
+    }
+    return;
+  }
+
+  fs.mkdirSync(path.dirname(to), { recursive: true });
+  fs.copyFileSync(from, to);
+}
+
+/**
+ * Готовит страницу для мобильной версии.
+ *
+ * Три отличия от настольной:
+ *   1) подключается локальная реализация серверной части;
+ *   2) добавляется мета-тег области просмотра с запретом масштабирования —
+ *      двойное касание по сцене иначе увеличивало бы страницу вместо
+ *      действия в сцене;
+ *   3) снимается ограничение источников, требующее сервера: в мобильной
+ *      сборке страница открывается по адресу приложения, а не по http.
+ *
+ * @param {string} html исходная разметка
+ * @returns {string} разметка для мобильной сборки
+ */
+function prepareHtml(html) {
+  let out = html;
+
+  // Локальная реализация подключается перед прикладной логикой: к моменту
+  // её запуска модуль должен быть определён.
+  out = out.replace(
+    '  <script src="/static/js/app.js"></script>',
+    '  <script src="/static/js/local-api.js"></script>\n' +
+    '  <script src="/static/js/app.js"></script>'
+  );
+
+  // Мост Capacitor подключается первым: модуль уведомлений проверяет его
+  // наличие при загрузке, чтобы выбрать способ доставки сообщений.
+  out = out.replace(
+    '  <script src="/static/js/vendor/matter.min.js"></script>',
+    '  <script src="capacitor.js"></script>\n' +
+    '  <script src="/static/js/vendor/matter.min.js"></script>'
+  );
+
+  // Пути делаются относительными: в приложении страница открывается не с
+  // корня веб-сервера, и ведущая косая черта увела бы в никуда.
+  out = out.replace(/(src|href)="\/static\//g, '$1="static/');
+
+  out = out.replace(
+    '<meta name="viewport" content="width=device-width, initial-scale=1.0">',
+    '<meta name="viewport" content="width=device-width, initial-scale=1.0, ' +
+    'maximum-scale=1.0, user-scalable=no, viewport-fit=cover">'
+  );
+
+  // Политика источников в мобильной сборке задаётся оболочкой, а не
+  // страницей: адрес приложения не совпадает с тем, что означает 'self'
+  // в веб-контексте.
+  out = out.replace(
+    /  <meta http-equiv="Content-Security-Policy"[\s\S]*?>\n/,
+    ''
+  );
+
+  return out;
+}
+
+function main() {
+  if (fs.existsSync(OUT)) {
+    fs.rmSync(OUT, { recursive: true });
+  }
+  fs.mkdirSync(OUT, { recursive: true });
+
+  for (const [from, to] of ASSETS) {
+    const source = path.join(ROOT, from);
+    if (!fs.existsSync(source)) {
+      console.warn(`  пропущено (нет файла): ${from}`);
+      continue;
+    }
+    copy(source, path.join(OUT, to));
+  }
+
+  const html = fs.readFileSync(path.join(ROOT, 'templates', 'index.html'), 'utf8');
+  fs.writeFileSync(path.join(OUT, 'index.html'), prepareHtml(html), 'utf8');
+
+  // Проверка обязательного вендорного файла: без него сцены не работают,
+  // а обнаружилось бы это только на устройстве.
+  const matter = path.join(OUT, 'static', 'js', 'vendor', 'matter.min.js');
+  if (!fs.existsSync(matter) || fs.statSync(matter).size === 0) {
+    console.error('\n  ОШИБКА: static/js/vendor/matter.min.js отсутствует или пуст.');
+    console.error('  Без него интерактивные сцены не запустятся.');
+    process.exit(1);
+  }
+
+  const files = countFiles(OUT);
+  console.log(`  собрано файлов: ${files.count}`);
+  console.log(`  общий размер: ${(files.size / 1024).toFixed(0)} КБ`);
+  console.log('\n  готово: mobile/www');
+}
+
+/**
+ * Считает файлы и общий размер каталога.
+ * @param {string} dir
+ * @returns {{count: number, size: number}}
+ */
+function countFiles(dir) {
+  let count = 0;
+  let size = 0;
+  for (const name of fs.readdirSync(dir)) {
+    const full = path.join(dir, name);
+    const stat = fs.statSync(full);
+    if (stat.isDirectory()) {
+      const inner = countFiles(full);
+      count += inner.count;
+      size += inner.size;
+    } else {
+      count += 1;
+      size += stat.size;
+    }
+  }
+  return { count, size };
+}
+
+main();

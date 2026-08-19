@@ -71,6 +71,18 @@ datas = [
 if icon_file.is_file():
     datas.append(("assets", "assets"))
 
+# Веса модели включаются в поставку, только если это запрошено явно:
+# гигабайт внутри сборки замедляет её и не нужен большинству пользователей.
+if os.environ.get("MYQUESTIFY_BUNDLE_MODEL") == "1":
+    model_file = PROJECT_ROOT / "models" / "model.gguf"
+    if model_file.is_file():
+        datas.append(("models/model.gguf", "models"))
+        print(f"[MyQuestify] Веса модели включены в сборку: "
+              f"{model_file.stat().st_size / (1024 ** 3):.2f} ГБ")
+    else:
+        print("[MyQuestify] MYQUESTIFY_BUNDLE_MODEL=1, но models/model.gguf не найден.",
+              file=sys.stderr)
+
 binaries = []
 
 # --------------------------------------------------------------------------- #

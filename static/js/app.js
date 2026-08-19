@@ -53,7 +53,7 @@
 
   /** Подписи статусов. Ключи словаря совпадают со значениями с сервера. */
   function statusLabel(status) {
-    var ru = { pending: 'в работе', completed: 'завершена', failed: 'просрочено' };
+    var ru = { pending: 'в работе', completed: 'завершена', failed: 'провалена' };
     return t('status.' + status, ru[status] || status);
   }
 
@@ -272,6 +272,19 @@
      * @returns {Promise<Object>}
      */
     request: function (url, options) {
+      // В мобильной сборке сервера нет: запрос обрабатывается локальной
+      // реализацией с тем же набором адресов и форм ответов. Подмена
+      // выполняется здесь, в единственной точке, поэтому остальной код
+      // приложения не различает режимы.
+      if (window.LocalAPI && window.LocalAPI.ready) {
+        return window.LocalAPI.handle(url, options).catch(function (error) {
+          var failure = new Error(error.detail || error.message ||
+            'Ошибка обработки запроса');
+          failure.status = error.status || 500;
+          throw failure;
+        });
+      }
+
       return fetch(url, options).then(function (response) {
         // Тело читается как текст и разбирается вручную. Ответ 204 приходит
         // с заголовком application/json, но пустым телом, и response.json()
@@ -472,7 +485,7 @@
     }
 
     if (task.is_overdue) {
-      chips += '<span class="chip chip--overdue">' + escapeHtml(t('status.overdue', 'просрочено')) + '</span>';
+      chips += '<span class="chip chip--overdue">просрочена</span>';
     }
     if (task.deadline) {
       chips += '<span>' + escapeHtml(t('task.until', 'до')) + ' ' +
@@ -717,6 +730,19 @@
     }
   }
 
+  /**
+   * Перепланирует мобильные напоминания.
+   *
+   * Вызывается после любого изменения списка квестов. Настольная версия
+   * этого не требует: там планировщик сам просматривает базу раз в минуту,
+   * тогда как на телефоне расписание передаётся системе заранее и о
+   * последующих изменениях не знает.
+   */
+  function resyncReminders() {
+    if (!window.MobileNotify) { return; }
+    window.MobileNotify.schedule(state.tasks, state.settings);
+  }
+
   /** Перерисовывает список квестов и счётчик в шапке панели. */
   function renderTasks() {
     dom.tasksRoot.setAttribute('aria-busy', 'false');
@@ -739,6 +765,7 @@
     // списке оставлял в нём отметки удалённых квестов: список очищался, а
     // сетка сроков сохраняла прежнее состояние.
     renderAgenda();
+    resyncReminders();
   }
 
   /**
@@ -1254,7 +1281,6 @@
           state.oracleLoaded = false;
           loadOracle();
         }
-        if (window.Stage && window.Stage.retranslate) { window.Stage.retranslate(); }
       }
     }
 
@@ -2102,7 +2128,27 @@
     });
 
     dom.notifyToggle.addEventListener('change', function () {
-      saveSettings({ notifications_enabled: dom.notifyToggle.checked });
+      var wanted = dom.notifyToggle.checked;
+      saveSettings({ notifications_enabled: wanted });
+
+      if (!wanted || !window.MobileNotify) {
+        if (window.MobileNotify) { window.MobileNotify.clear(); }
+        return;
+      }
+
+      // Разрешение спрашивается в момент включения, а не при запуске: запрос
+      // без понятной причины пользователи отклоняют, а вернуть его потом
+      // можно только через настройки системы.
+      window.MobileNotify.enable().then(function (allowed) {
+        if (!allowed) {
+          dom.notifyToggle.checked = false;
+          saveSettings({ notifications_enabled: false });
+          toast(t('toast.notifyDenied',
+            'Уведомления запрещены в настройках устройства.'), 'error');
+          return;
+        }
+        resyncReminders();
+      });
     });
 
     dom.motionToggle.addEventListener('change', function () {
@@ -2128,6 +2174,7 @@
         return;
       }
       saveSettings({ notify_lead_minutes: minutes });
+      resyncReminders();
     });
 
     // ---- общее закрытие модальных окон ----
@@ -2218,6 +2265,22 @@
    * перекраситься. Остальные шаги изолированы друг от друга: сбой одного
    * не должен оставлять приложение с пустым экраном.
    */
+  /**
+   * Готовит локальное хранилище, если сервер недоступен.
+   *
+   * Признаком мобильной сборки служит наличие модуля: он подключается
+   * только в ней. Настольная версия файл не загружает и продолжает
+   * работать через сервер.
+   *
+   * @returns {Promise<void>}
+   */
+  function prepareStorage() {
+    if (!window.LocalAPI) { return Promise.resolve(); }
+    return window.LocalAPI.init().then(function () {
+      window.LocalAPI.ready = true;
+    });
+  }
+
   function boot() {
     if (window.Splash) { window.Splash.show(); }
 
@@ -2277,6 +2340,16 @@
       console.error('Не удалось переключить вид:', error);
     }
 
+    prepareStorage().then(startSession);
+  }
+
+  /**
+   * Загружает данные и снимает экран загрузки.
+   *
+   * Выделено из запуска: в мобильной сборке этому шагу предшествует
+   * подготовка хранилища, и объединение оставило бы вложенные обещания.
+   */
+  function startSession() {
     // Просрочка проверяется до загрузки списка: пока приложение было
     // закрыто, сроки могли пройти, и пользователь должен увидеть это сразу,
     // а не после первого же обновления.

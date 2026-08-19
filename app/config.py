@@ -22,6 +22,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 import sys
 from pathlib import Path
 from typing import Final
@@ -178,9 +179,9 @@ DEFAULT_PRIORITY: Final[str] = "normal"
 # должно подталкивать.
 PENALTY_RATE: Final[float] = 0.5
 
-# Просрочка фиксируется сразу после наступления дедлайна.
-# Штраф равен половине исходной награды и применяется ровно один раз.
-PENALTY_GRACE_MINUTES: Final[int] = 0
+# Сколько минут после дедлайна ждать, прежде чем засчитать провал. Запас
+# спасает от штрафа за минуту опоздания, пока пользователь дожимает задачу.
+PENALTY_GRACE_MINUTES: Final[int] = 15
 BACKGROUND_PRICE: Final[int] = 100        # стоимость смены фона Сада
 TASKS_PER_TREE_LEVEL: Final[int] = 3      # задач на один уровень дерева
 MAX_TREE_LEVEL: Final[int] = 10
@@ -292,6 +293,40 @@ UPLOAD_CHUNK_SIZE: Final[int] = 64 * 1024
 SERVER_HOST: Final[str] = "127.0.0.1"
 SERVER_PORT: Final[int] = 8731
 SERVER_URL: Final[str] = f"http://{SERVER_HOST}:{SERVER_PORT}"
+
+
+def adopt_bundled_model() -> bool:
+    """Переносит веса модели из поставки в каталог данных.
+
+    В полном выпуске файл ``model.gguf`` лежит рядом с приложением, тогда
+    как читается он из каталога данных пользователя. Перенос выполняется
+    один раз при первом запуске.
+
+    Копирование, а не чтение по месту, выбрано по двум причинам. Каталог
+    установки может быть доступен только для чтения — например, при
+    установке в ``Program Files``. И при обновлении приложения прежний
+    каталог удаляется целиком, а веса, скачанные пользователем отдельно,
+    остались бы в каталоге данных нетронутыми.
+
+    Returns:
+        bool: ``True``, если файл был перенесён в этот раз.
+    """
+    if LLM_MODEL_PATH.exists():
+        return False
+
+    bundled = RESOURCE_DIR / "models" / "model.gguf"
+    if not bundled.is_file():
+        # В обычной сборке модель не поставляется — это не ошибка.
+        return False
+
+    try:
+        MODELS_DIR.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(bundled, LLM_MODEL_PATH)
+        return True
+    except OSError:
+        # Нехватка места или запрет записи не должны мешать запуску:
+        # приложение продолжит работу на резервных фразах.
+        return False
 
 
 def ensure_runtime_dirs() -> None:

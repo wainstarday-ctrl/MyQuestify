@@ -39,6 +39,45 @@
 
   var registry = {};
 
+  /**
+   * Профиль производительности.
+   *
+   * Определяется один раз при запуске по числу ядер и объёму памяти,
+   * которые сообщает браузер. Значения приблизительные, но для выбора между
+   * тремя ступенями этого достаточно: точная оценка потребовала бы пробного
+   * прогона, а он сам по себе тормозил бы запуск.
+   *
+   *   high   — полное качество (настольные машины, сильные телефоны);
+   *   medium — половина частиц, разрешение до 1.5×;
+   *   low    — четверть частиц, разрешение 1×, без свечения.
+   */
+  var PROFILES = {
+    high:   { particles: 1,    pixelRatio: 2.5, glow: true,  shadows: true },
+    medium: { particles: 0.55, pixelRatio: 1.5, glow: true,  shadows: true },
+    low:    { particles: 0.28, pixelRatio: 1,   glow: false, shadows: false }
+  };
+
+  /**
+   * Подбирает профиль под устройство.
+   *
+   * @returns {string} ключ профиля
+   */
+  function detectProfile() {
+    var cores = global.navigator && global.navigator.hardwareConcurrency;
+    var memory = global.navigator && global.navigator.deviceMemory;
+    var coarse = global.matchMedia && global.matchMedia('(pointer: coarse)').matches;
+
+    // Сенсорный ввод сам по себе означает телефон или планшет, где запас
+    // мощности меньше даже при том же числе ядер: экономия энергии
+    // ограничивает частоту процессора сильнее, чем на настольной машине.
+    if (memory && memory <= 2) { return 'low'; }
+    if (cores && cores <= 4 && coarse) { return 'low'; }
+    if (memory && memory <= 4) { return 'medium'; }
+    if (coarse) { return 'medium'; }
+    if (cores && cores <= 2) { return 'medium'; }
+    return 'high';
+  }
+
   var S = {
     canvas: null,
     ctx: null,
@@ -58,6 +97,8 @@
     resizeTimer: 0,
     errorStreak: 0,
     interactive: true,
+    profile: 'high',
+    quality: PROFILES.high,
     hintsEnabled: true,
     hintTimer: 0,
     sceneConfig: null,
@@ -167,6 +208,20 @@
      * несколько источников складываются в яркость, а не перекрывают друг друга.
      */
     glow: function (ctx, x, y, r, color, alpha) {
+      // На слабом устройстве свечение рисуется упрощённо: радиальный
+      // градиент поверх всего кадра в режиме сложения — самая дорогая
+      // операция отрисовки, и именно она первой роняет частоту кадров.
+      if (!S.quality.glow) {
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.beginPath();
+        ctx.arc(x, y, r * 0.55, 0, Math.PI * 2);
+        ctx.fillStyle = color.replace('ALPHA', (alpha * 0.5).toFixed(3));
+        ctx.fill();
+        ctx.restore();
+        return;
+      }
+
       var g = ctx.createRadialGradient(x, y, 0, x, y, r);
       g.addColorStop(0, color.replace('ALPHA', alpha));
       g.addColorStop(0.55, color.replace('ALPHA', alpha * 0.28));
@@ -281,6 +336,9 @@
      */
     seedMotes: function (count, width, height, options) {
       var opts = options || {};
+      // Число частиц масштабируется профилем: на слабом устройстве их
+      // остаётся четверть, чего хватает для ощущения живого воздуха.
+      count = Math.max(4, Math.round(count * S.quality.particles));
       var rise = opts.rise ? -1 : 1;
       var speed = opts.speed || 1;
       var list = [];
@@ -611,6 +669,17 @@
 
   // ------------------------------------------------------------- цикл кадров
 
+  /** Сообщает выбранный профиль — помогает при разборе жалоб на плавность. */
+  function logProfile() {
+    if (global.console && global.console.info) {
+      global.console.info(
+        'MyQuestify: профиль отрисовки «' + S.profile + '»' +
+        ' (ядер: ' + ((global.navigator && global.navigator.hardwareConcurrency) || '?') +
+        ', память: ' + ((global.navigator && global.navigator.deviceMemory) || '?') + ' ГБ)'
+      );
+    }
+  }
+
   function frame(timestamp) {
     if (!S.running) { return; }
 
@@ -684,6 +753,11 @@
     get width() { return S.width; },
     get height() { return S.height; },
     get level() { return S.level; },
+    /** Доля от полного числа частиц для текущего устройства. */
+    get density() { return S.quality.particles; },
+    /** Разрешено ли свечение: на слабых устройствах оно дороже прочего. */
+    get glow() { return S.quality.glow; },
+    get profile() { return S.profile; },
     draw: draw,
     util: util
   };
@@ -697,10 +771,6 @@
     }
     S.scene = null;
     S.sceneKey = null;
-  }
-
-  function sceneText(key, fallback) {
-    return global.I18n ? global.I18n.t(key, fallback) : fallback;
   }
 
   // -------------------------------------------------------------------- API
@@ -744,6 +814,10 @@
         return false;
       }
 
+      S.profile = detectProfile();
+      S.quality = PROFILES[S.profile];
+      logProfile();
+
       S.ctx = S.canvas.getContext('2d');
       applySize();
 
@@ -754,6 +828,8 @@
 
       bindPointer();
       bindKeyboard();
+
+      if (global.TouchControls) { global.TouchControls.init(S.host); }
 
       var onResize = function () {
         global.clearTimeout(S.resizeTimer);
@@ -795,7 +871,7 @@
         S.hintDismissed = false;
 
         if (S.hint) {
-          S.hint.textContent = sceneText('scene.hint.' + S.sceneKey, S.scene.hint);
+          S.hint.textContent = S.scene.hint || '';
         }
 
         // Сцена может принимать настройки (раскладку клавиш).
@@ -807,6 +883,13 @@
         // Подсказка появляется заново при каждой смене сцены: правила у
         // каждой свои, и один раз прочитанное к новой сцене не относится.
         armHint();
+
+        // Экранные кнопки поворота показываются только для сцен, которые
+        // принимают нажатия клавиш. Проверка по наличию обработчика, а не по
+        // списку названий: список пришлось бы править при каждой новой сцене.
+        if (global.TouchControls) {
+          global.TouchControls.setVisible(typeof S.scene.keyDown === 'function');
+        }
       } catch (error) {
         console.error('Не удалось построить сцену «' + key + '»:', error);
         S.scene = null;
@@ -831,17 +914,11 @@
       if (S.scene && typeof S.scene.configure === 'function' && S.sceneConfig) {
         S.scene.configure(S.sceneConfig);
       }
+      if (global.TouchControls) { global.TouchControls.configure(config); }
       if (!S.hintsEnabled && S.hint) {
         global.clearTimeout(S.hintTimer);
         S.hint.classList.add('is-faded');
         S.hintDismissed = true;
-      }
-    },
-
-    /** Replaces the current scene hint after a language change. */
-    retranslate: function () {
-      if (S.hint && S.scene) {
-        S.hint.textContent = sceneText('scene.hint.' + S.sceneKey, S.scene.hint);
       }
     },
 
@@ -863,6 +940,13 @@
       if (!S.interactive) { endDrag(); }
       if (S.canvas) {
         S.canvas.style.cursor = S.interactive ? 'crosshair' : 'not-allowed';
+      }
+      // В предпросмотре сцена не отвечает на ввод, поэтому кнопки поворота
+      // скрываются: доступная кнопка без действия вводит в заблуждение.
+      if (global.TouchControls && !S.interactive) {
+        global.TouchControls.setVisible(false);
+      } else if (global.TouchControls && S.scene) {
+        global.TouchControls.setVisible(typeof S.scene.keyDown === 'function');
       }
     },
 

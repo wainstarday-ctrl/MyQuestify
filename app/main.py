@@ -60,6 +60,7 @@ from app.config import (
     SCENES,
     STATIC_DIR,
     TASKS_PER_TREE_LEVEL,
+    adopt_bundled_model,
     localize,
     TOKENS_PER_HOUR,
     UPLOADS_DIR,
@@ -112,6 +113,13 @@ logger = logging.getLogger("myquestify.api")
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     """Готовит окружение при старте и корректно освобождает ресурсы при выходе."""
     ensure_runtime_dirs()
+
+    # Перенос весов из поставки выполняется до инициализации модуля модели,
+    # иначе первая проверка наличия файла дала бы отрицательный результат и
+    # приложение сообщило бы, что модель не найдена.
+    if adopt_bundled_model():
+        logger.info("Веса модели перенесены из поставки в %s", DATA_DIR)
+
     await init_db()
     notifier.start()
     logger.info(
@@ -1066,7 +1074,8 @@ async def apply_overdue_penalties(session: AsyncSession) -> tuple:
     штрафа должно быть одно, иначе баланс разъедется в зависимости от того,
     открыто ли окно приложения.
 
-    Просрочка фиксируется сразу после наступления дедлайна. Баланс не уходит в минус:
+    Отсрочка :data:`PENALTY_GRACE_MINUTES` спасает от штрафа за минуту
+    опоздания, пока пользователь дожимает задачу. Баланс не уходит в минус:
     отнимается не больше, чем есть — долговая яма не мотивирует, а отбивает
     желание открывать приложение.
 
