@@ -295,6 +295,41 @@ SERVER_PORT: Final[int] = 8731
 SERVER_URL: Final[str] = f"http://{SERVER_HOST}:{SERVER_PORT}"
 
 
+def _bundled_model_candidates() -> list:
+    """Перечисляет места, где могут лежать веса, вложенные в поставку.
+
+    Мест несколько, потому что PyInstaller размещает ресурсы по-разному в
+    зависимости от режима сборки. В режиме одного файла они распаковываются
+    во временный каталог, путь к которому лежит в ``sys._MEIPASS``. В режиме
+    отдельного каталога ресурсы попадают во вложенную папку ``_internal``,
+    тогда как файлы, добавленные к выпуску вручную, оказываются рядом с
+    исполняемым файлом — то есть на уровень выше.
+
+    Перечисление всех вариантов надёжнее выбора одного: ошибка в
+    предположении о раскладке проявляется как «модель не найдена» при
+    физически присутствующем файле, и причина неочевидна.
+
+    Returns:
+        list: пути-кандидаты в порядке проверки.
+    """
+    candidates = [RESOURCE_DIR / "models" / "model.gguf"]
+
+    if IS_FROZEN:
+        # Рядом с исполняемым файлом: сюда веса кладёт скрипт сборки выпуска.
+        executable_dir = Path(sys.executable).resolve().parent
+        candidates.append(executable_dir / "models" / "model.gguf")
+        # На уровень выше каталога ресурсов — вариант раскладки _internal.
+        candidates.append(RESOURCE_DIR.parent / "models" / "model.gguf")
+
+    # Порядок сохраняется, повторы отбрасываются: один и тот же путь может
+    # получиться разными способами при совпадении каталогов.
+    unique = []
+    for path in candidates:
+        if path not in unique:
+            unique.append(path)
+    return unique
+
+
 def adopt_bundled_model() -> bool:
     """Переносит веса модели из поставки в каталог данных.
 
@@ -314,19 +349,20 @@ def adopt_bundled_model() -> bool:
     if LLM_MODEL_PATH.exists():
         return False
 
-    bundled = RESOURCE_DIR / "models" / "model.gguf"
-    if not bundled.is_file():
-        # В обычной сборке модель не поставляется — это не ошибка.
-        return False
+    for bundled in _bundled_model_candidates():
+        if not bundled.is_file():
+            continue
+        try:
+            MODELS_DIR.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(bundled, LLM_MODEL_PATH)
+            return True
+        except OSError:
+            # Нехватка места или запрет записи не должны мешать запуску:
+            # приложение продолжит работу на резервных фразах.
+            return False
 
-    try:
-        MODELS_DIR.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(bundled, LLM_MODEL_PATH)
-        return True
-    except OSError:
-        # Нехватка места или запрет записи не должны мешать запуску:
-        # приложение продолжит работу на резервных фразах.
-        return False
+    # В обычной сборке модель не поставляется — это не ошибка.
+    return False
 
 
 def ensure_runtime_dirs() -> None:

@@ -52,17 +52,28 @@
      * иначе пользователь решит, что результат случаен.
      */
     var REACTIONS = {
-      'amber|azure':     { kind: 'verdant', effect: 'foam',    label: 'Пена!' },
-      'crimson|verdant': { kind: 'ash',     effect: 'smoke',   label: 'Дым!' },
-      'amber|violet':    { kind: 'crimson', effect: 'flash',   label: 'Вспышка!' },
-      'azure|verdant':   { kind: 'pearl',   effect: 'crystal', label: 'Кристаллы!' },
-      'crimson|violet':  { kind: 'violet',  effect: 'bubble',  label: 'Кипение!' },
-      'amber|crimson':   { kind: 'amber',   effect: 'flash',   label: 'Вспышка!' },
-      'azure|violet':    { kind: 'azure',   effect: 'bubble',  label: 'Кипение!' },
-      'ash|verdant':     { kind: 'verdant', effect: 'smoke',   label: 'Дым!' }
+      // Подпись задаётся ключом эффекта: одна и та же реакция называется
+      // одинаково независимо от того, какая пара её вызвала.
+      'amber|azure':     { kind: 'verdant', effect: 'foam' },
+      'crimson|verdant': { kind: 'ash',     effect: 'smoke' },
+      'amber|violet':    { kind: 'crimson', effect: 'flash' },
+      'azure|verdant':   { kind: 'pearl',   effect: 'crystal' },
+      'crimson|violet':  { kind: 'violet',  effect: 'bubble' },
+      'amber|crimson':   { kind: 'amber',   effect: 'flash' },
+      'azure|violet':    { kind: 'azure',   effect: 'bubble' },
+      'ash|verdant':     { kind: 'verdant', effect: 'smoke' }
     };
 
     var ORDER = ['azure', 'crimson', 'verdant', 'amber', 'violet'];
+
+    /** Русские подписи эффектов. Служат запасным значением для перевода. */
+    var EFFECT_LABELS = {
+      foam: 'Пена!',
+      smoke: 'Дым!',
+      flash: 'Вспышка!',
+      crystal: 'Кристаллы!',
+      bubble: 'Кипение!'
+    };
 
     var flasks = [];
     var drops = [];
@@ -296,7 +307,10 @@
         // Продукт реакции имеет собственный цвет, а не смесь исходных:
         // иначе «дым» и «пена» выглядели бы одинаково грязным оттенком.
         flask.rgb = REAGENTS[reaction.kind].rgb.slice();
-        spawnEffect(reaction.effect, flask, reaction.label);
+        spawnEffect(
+          reaction.effect, flask,
+          env.t('effect.' + reaction.effect, EFFECT_LABELS[reaction.effect])
+        );
       } else if (total > 0) {
         flask.rgb = u.mix(flask.rgb, drop.rgb, amount / total);
       }
@@ -737,15 +751,19 @@
           ctx.font = '600 9px "Cascadia Mono", Consolas, monospace';
           ctx.textAlign = 'center';
           ctx.fillStyle = u.rgba(flask.rgb, 0.85);
+          // Ключ строится из внутреннего обозначения реагента: русское
+          // название служит запасным значением и не участвует в поиске.
           ctx.fillText(
-            REAGENTS[flask.kind].name + ' · ' + Math.round(flask.fill * 100) + '%',
+            env.t('reagent.' + flask.kind, REAGENTS[flask.kind].name) +
+              ' · ' + Math.round(flask.fill * 100) + '%',
             flask.x, benchY + 18
           );
 
           if (flask === dragged && Math.abs(flask.angle) < 0.06) {
             ctx.fillStyle = 'rgba(210, 245, 255, 0.8)';
             ctx.fillText(
-              keys.ccw.replace('Key', '') + ' / ' + keys.cw.replace('Key', '') + ' — наклон',
+              keys.ccw.replace('Key', '') + ' / ' + keys.cw.replace('Key', '') +
+                ' — ' + env.t('lab.tilt', 'наклон'),
               flask.x, flask.y - flask.h / 2 - 14
             );
           }

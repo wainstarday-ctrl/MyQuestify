@@ -74,6 +74,30 @@
   </tr>
 </table>
 
+## Сцены в движении
+
+Статичный кадр не передаёт главного: сцены отзываются на действия и живут
+собственной жизнью между ними.
+
+<p align="center">
+  <img src="docs/screenshots/garden.gif" alt="Сад Вдумчивости: плоды падают с кроны" width="640">
+  <br>
+  <sub>Сад Вдумчивости — нажатие на крону роняет плоды, их можно ловить и бросать</sub>
+</p>
+
+<table>
+  <tr>
+    <td width="50%">
+      <img src="docs/screenshots/lab.gif" alt="Лаборатория Идей: смешивание реагентов">
+      <p align="center"><sub>Лаборатория Идей: наклон колбы и реакция</sub></p>
+    </td>
+    <td width="50%">
+      <img src="docs/screenshots/campfire.gif" alt="Лагерь Уединения: искры от костра">
+      <p align="center"><sub>Лагерь Уединения: искры и ветер от руки</sub></p>
+    </td>
+  </tr>
+</table>
+
 ## Стек
 
 Python 3.10+ · FastAPI · SQLAlchemy · SQLite · PyWebView · llama-cpp-python ·

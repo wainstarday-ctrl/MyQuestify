@@ -1224,7 +1224,12 @@
             ctx.fillStyle = planet === dragged
               ? 'rgba(220, 240, 255, 0.95)'
               : 'rgba(200, 216, 240, 0.42)';
-            ctx.fillText(planet.name, pos.x, pos.y + radius + 13);
+            // Ключ строится из порядкового номера планеты, а не из её
+            // русского названия: перевод не должен зависеть от написания.
+            ctx.fillText(
+              env.t('planet.' + planet.orbit, planet.name),
+              pos.x, pos.y + radius + 13
+            );
           }
 
           // Спутники: их число задано стилем планеты, а не размером — так

@@ -1581,7 +1581,7 @@
         ctx.font = '600 9px "Cascadia Mono", Consolas, monospace';
         ctx.textAlign = 'right';
         ctx.fillStyle = 'rgba(255, 210, 150, 0.6)';
-        ctx.fillText('ТОПЛИВО', barX + barWidth, barY - 4);
+        ctx.fillText(env.t('scene.fuel', 'ТОПЛИВО'), barX + barWidth, barY - 4);
 
         draw.vignette(ctx, width, height, 0.58);
       },

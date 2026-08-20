@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Сборка выпусков MyQuestify для публикации.
 
@@ -89,6 +89,31 @@ if (Get-Command node -ErrorAction SilentlyContinue) {
 # Сборка приложения
 # --------------------------------------------------------------------------- #
 
+if ($WithModel) {
+    Write-Step 'Проверка пакета инференса'
+
+    # Веса без пакета бесполезны: приложение прочитает файл, но выполнить
+    # модель будет нечем. Проверка до сборки экономит двадцать минут
+    # упаковки гигабайта впустую.
+    $venvPython = Join-Path $root '.venv\Scripts\python.exe'
+    if (Test-Path $venvPython) {
+        & $venvPython -c "import llama_cpp" 2>$null
+        if ($LASTEXITCODE -ne 0) {
+            Write-Warn 'llama-cpp-python не установлен в .venv.'
+            Write-Warn 'Веса попадут в архив, но выполнить модель будет нечем.'
+            Write-Warn 'Установка:'
+            Write-Warn '  .\.venv\Scripts\Activate.ps1'
+            Write-Warn '  pip install llama-cpp-python --only-binary=:all: --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu'
+            $answer = Read-Host "`n  Продолжить без пакета? (д/н)"
+            if ($answer -notmatch '^[дdyY]') { exit 1 }
+        } else {
+            Write-Ok 'llama-cpp-python установлен'
+        }
+    } else {
+        Write-Warn 'Окружение .venv не найдено — проверка пропущена'
+    }
+}
+
 if (-not $SkipBuild) {
     Write-Step 'Сборка приложения'
     # Режим отдельного каталога выбран сознательно: сборка одним файлом при
@@ -175,6 +200,26 @@ if ($WithModel) {
     # распаковка гигабайта при каждом старте не требуется.
     New-Item -ItemType Directory -Path (Join-Path $fullDir 'models') | Out-Null
     Copy-Item $model (Join-Path $fullDir 'models\model.gguf')
+
+    # Проверка, что приложение найдёт веса. В режиме отдельного каталога
+    # ресурсы лежат внутри _internal, и путь к ним отличается от каталога
+    # с исполняемым файлом. Приложение проверяет оба места, но убедиться
+    # в наличии файла стоит здесь: ошибка раскладки выглядит как «модель
+    # не найдена» при физически присутствующем файле.
+    $placed = Join-Path $fullDir 'models\model.gguf'
+    if (-not (Test-Path $placed)) {
+        throw 'Веса не скопировались в каталог выпуска'
+    }
+    $placedMb = [math]::Round((Get-Item $placed).Length / 1MB, 0)
+    if ($placedMb -lt 100) {
+        throw "Скопированный файл подозрительно мал: $placedMb МБ. Возможен обрыв копирования."
+    }
+    Write-Ok "веса на месте — $placedMb МБ"
+
+    $internal = Join-Path $fullDir '_internal'
+    if (Test-Path $internal) {
+        Write-Ok 'раскладка: отдельный каталог (_internal)'
+    }
 
     @"
 MyQuestify $version — версия для Windows 10 и 11, с языковой моделью

@@ -60,6 +60,9 @@ from app.config import (
     SCENES,
     STATIC_DIR,
     TASKS_PER_TREE_LEVEL,
+    LLM_MODEL_PATH,
+    MODELS_DIR,
+    _bundled_model_candidates,
     adopt_bundled_model,
     localize,
     TOKENS_PER_HOUR,
@@ -118,7 +121,16 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     # иначе первая проверка наличия файла дала бы отрицательный результат и
     # приложение сообщило бы, что модель не найдена.
     if adopt_bundled_model():
-        logger.info("Веса модели перенесены из поставки в %s", DATA_DIR)
+        logger.info("Веса модели перенесены из поставки в %s", MODELS_DIR)
+    elif not LLM_MODEL_PATH.is_file():
+        # Перечень проверенных мест выводится в журнал: сообщение «модель не
+        # найдена» при физически присутствующем файле иначе не поддаётся
+        # разбору — непонятно, куда именно смотрело приложение.
+        logger.info(
+            "Веса модели не найдены. Ожидаются в %s. Проверены также: %s",
+            LLM_MODEL_PATH,
+            ", ".join(str(path) for path in _bundled_model_candidates()),
+        )
 
     await init_db()
     notifier.start()
@@ -349,6 +361,8 @@ async def health() -> JSONResponse:
         "version": APP_VERSION,
         "frozen": IS_FROZEN,
         "llm_available": ai_module.is_model_available(),
+        "llm_backend": ai_module.is_backend_available(),
+        "model_path": str(LLM_MODEL_PATH),
         "data_dir": str(DATA_DIR),
     })
 

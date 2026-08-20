@@ -240,13 +240,52 @@
    * @param {string} message
    * @param {('success'|'info'|'error')} [kind='info']
    */
+  /**
+   * Показывает всплывающее уведомление.
+   *
+   * Повторное сообщение с тем же текстом заменяет прежнее, а не добавляет
+   * второе. Стопка одинаковых уведомлений заслоняет интерфейс и не несёт
+   * сведений: пользователь и так видел первое.
+   *
+   * @param {string} message текст
+   * @param {string} [kind] вид: info, success, error
+   */
   function toast(message, kind) {
+    // Повтор того же текста: продлеваем время показа прежнего сообщения и
+    // отмечаем счётчиком, сколько раз оно повторилось.
+    var existing = dom.toasts.querySelector('[data-message="' +
+      String(message).replace(/"/g, '&quot;') + '"]');
+
+    if (existing) {
+      var count = (parseInt(existing.dataset.count, 10) || 1) + 1;
+      existing.dataset.count = count;
+      existing.textContent = message + ' ×' + count;
+      existing.classList.remove('is-leaving');
+
+      // Отсчёт запускается заново: сообщение должно провисеть полное время
+      // после последнего повтора, а не исчезнуть по таймеру первого.
+      window.clearTimeout(existing.dismissTimer);
+      existing.dismissTimer = window.setTimeout(function () {
+        existing.classList.add('is-leaving');
+        window.setTimeout(function () { existing.remove(); }, 240);
+      }, TOAST_LIFETIME_MS);
+      return;
+    }
+
     var node = document.createElement('div');
     node.className = 'toast toast--' + (kind || 'info');
     node.textContent = message;
+    node.dataset.message = message;
+    node.dataset.count = '1';
     dom.toasts.appendChild(node);
 
-    window.setTimeout(function () {
+    // Число одновременно видимых сообщений ограничено: на узком экране
+    // четвёртое уже перекрывает интерфейс целиком.
+    while (dom.toasts.children.length > 3) {
+      dom.toasts.removeChild(dom.toasts.firstChild);
+    }
+
+    node.dismissTimer = window.setTimeout(function () {
       node.classList.add('is-leaving');
       window.setTimeout(function () { node.remove(); }, 240);
     }, TOAST_LIFETIME_MS);
@@ -1280,6 +1319,11 @@
         if (state.oracleLoaded) {
           state.oracleLoaded = false;
           loadOracle();
+        }
+
+        // Подсказка сцены задаётся при её построении и сама не обновится.
+        if (window.Stage && window.Stage.retranslateHint) {
+          window.Stage.retranslateHint();
         }
       }
     }

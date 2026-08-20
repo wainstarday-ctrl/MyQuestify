@@ -87,6 +87,42 @@
       'progress.overdue': 'overdue',
 
       // ---- сцена ----
+      // Подсказки сцен. Ключ строится из ключа сцены, поэтому новая сцена
+      // получает перевод добавлением одной строки.
+      'hint.garden': 'Tap the crown and fruit will fall. You can catch and throw it.',
+      'hint.volcano': 'Press and hold the crater — lava will flow. Drops cool as they run down.',
+      'hint.cosmos': 'Drag a planet onto another orbit and they swap. Release anywhere and it returns.',
+      'hint.desk': 'Grab objects and scatter them. Tap an empty spot to push everything nearby.',
+      'hint.clockwork': 'Grab a gear and spin it. A small one turns a large one with effort; a large one sends the small ones racing.',
+      'hint.pond': 'Sweep across the water — ripples spread and push the lily pads. The leaves can be picked up.',
+      'hint.weave': 'Pull any node — the net stretches and resists. Release it and it springs back into balance.',
+      'hint.campfire': 'Tap near the top to toss in a log. Sweep your hand over the fire to fan it and swirl the sparks.',
+      'hint.lab': 'Pick up a flask and tilt it with the rotation keys. Pour into a neighbour and the reagents react.',
+
+      // Подписи, которые сцены рисуют прямо на холсте.
+      'scene.fuel': 'FUEL',
+      'lab.tilt': 'tilt',
+      'reagent.azure': 'azure',
+      'reagent.crimson': 'crimson',
+      'reagent.verdant': 'verdant',
+      'reagent.amber': 'amber',
+      'reagent.violet': 'violet',
+      'reagent.ash': 'ash',
+      'reagent.pearl': 'pearl',
+      'effect.foam': 'Foam!',
+      'effect.smoke': 'Smoke!',
+      'effect.flash': 'Flash!',
+      'effect.crystal': 'Crystals!',
+      'effect.bubble': 'Boiling!',
+      'planet.0': 'Mercury',
+      'planet.1': 'Venus',
+      'planet.2': 'Earth',
+      'planet.3': 'Mars',
+      'planet.4': 'Jupiter',
+      'planet.5': 'Saturn',
+      'planet.6': 'Uranus',
+      'planet.7': 'Neptune',
+
       'scene.eyebrow': 'Scene',
       'scene.tab': 'Scene',
       'oracle.tab': 'Oracle',

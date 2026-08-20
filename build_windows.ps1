@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Сборка MyQuestify в исполняемый файл Windows.
 

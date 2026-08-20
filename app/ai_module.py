@@ -198,6 +198,23 @@ _load_attempted: bool = False
 _format: Optional[prompt_formats.PromptFormat] = None
 
 
+def is_backend_available() -> bool:
+    """Проверяет, установлен ли пакет инференса.
+
+    Отсутствие пакета и отсутствие весов — разные неполадки с разными
+    способами исправления, но внешне выглядят одинаково: приложение работает
+    на резервных фразах. Разделение позволяет подсказать точную причину.
+
+    Returns:
+        bool: ``True``, если llama-cpp-python установлен.
+    """
+    try:
+        import llama_cpp  # noqa: F401 — проверяется только возможность импорта
+        return True
+    except ImportError:
+        return False
+
+
 def is_model_available() -> bool:
     """Возвращает ``True``, если веса модели найдены на диске.
 
