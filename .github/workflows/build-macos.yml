@@ -1,0 +1,106 @@
+name: Сборка для macOS
+
+# Сборка выполняется на машине GitHub с macOS. Это решает задачу, для
+# которой иначе потребовался бы компьютер Apple: собрать приложение для
+# macOS на Windows невозможно, поскольку PyInstaller упаковывает
+# исполняемый файл той системы, на которой запущен.
+#
+# Запускается двумя способами:
+#   * при отправке метки вида v1.2.3 — файл прикладывается к выпуску;
+#   * вручную со страницы Actions — файл остаётся вложением сборки.
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    # Процессор Apple: собранное приложение работает и на Intel через
+    # встроенный переводчик команд, тогда как обратное неверно.
+    runs-on: macos-14
+
+    steps:
+      - name: Получить исходный код
+        uses: actions/checkout@v4
+
+      - name: Установить Python
+        uses: actions/setup-python@v5
+        with:
+          # Версия выбрана не самая новая: под неё существуют готовые сборки
+          # llama-cpp-python, тогда как для свежих их приходится собирать
+          # из исходных текстов, что занимает десятки минут.
+          python-version: '3.12'
+
+      - name: Проверить наличие физического движка
+        run: |
+          if [ ! -s static/js/vendor/matter.min.js ]; then
+            echo "::error::Отсутствует static/js/vendor/matter.min.js."
+            echo "::error::Без него интерактивные сцены не работают."
+            echo "::error::Файл должен быть закоммичен в репозиторий."
+            exit 1
+          fi
+          echo "matter.min.js на месте"
+
+      - name: Установить Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Проверить запуск интерфейса
+        # Ошибки времени выполнения синтаксическая проверка не находит, а
+        # приводят они к самому неприятному отказу: приложение открывается
+        # и остаётся на экране загрузки навсегда.
+        run: node tools/smoke_test.js
+
+      - name: Установить зависимости
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller pillow
+
+      - name: Установить пакет инференса
+        # Отдельным шагом с продолжением при ошибке: его отсутствие не
+        # должно отменять сборку. Приложение в этом случае работает на
+        # заготовленных фразах, о чём сообщает в шапке.
+        continue-on-error: true
+        run: "pip install llama-cpp-python --only-binary=:all:"
+
+      - name: Собрать приложение
+        run: |
+          chmod +x build_macos.sh
+          ./build_macos.sh --skip-deps --dmg
+
+      - name: Определить версию
+        id: version
+        run: |
+          VERSION=$(python -c "import sys; sys.path.insert(0, '.'); from app.config import APP_VERSION; print(APP_VERSION)")
+          echo "value=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Переименовать образ диска
+        run: |
+          cd dist
+          for f in *.dmg; do
+            mv "$f" "MyQuestify-${{ steps.version.outputs.value }}-macos.dmg" 2>/dev/null || true
+          done
+          ls -lh *.dmg
+
+      - name: Приложить к сборке
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-dmg
+          path: dist/*.dmg
+          retention-days: 90
+
+      - name: Приложить к выпуску
+        # Только для меток: ручной запуск оставляет файл вложением сборки,
+        # не создавая выпуска.
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.dmg
+          fail_on_unmatched_files: true

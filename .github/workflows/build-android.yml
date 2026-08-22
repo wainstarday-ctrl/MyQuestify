@@ -1,0 +1,135 @@
+name: Сборка для Android
+
+# Сборка выполняется на машине GitHub. Это решает две задачи: не требуется
+# устанавливать Android Studio с набором средств разработки объёмом в
+# несколько гигабайт, и не требуется устойчивое соединение для загрузки
+# сотен пакетов — у машины сборки оно заведомо надёжнее домашнего.
+#
+# Собирается отладочная разновидность. Она подписана временным ключом,
+# устанавливается на любое устройство и годится для проверки и раздачи.
+# Разновидность для публикации в магазине требует собственного ключа
+# подписи, который нельзя хранить в репозитории: его огласка позволила бы
+# выпустить поддельное обновление от имени автора.
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Получить исходный код
+        uses: actions/checkout@v4
+
+      - name: Проверить наличие физического движка
+        run: |
+          if [ ! -s static/js/vendor/matter.min.js ]; then
+            echo "::error::Отсутствует static/js/vendor/matter.min.js."
+            echo "::error::Без него интерактивные сцены не работают."
+            exit 1
+          fi
+          echo "matter.min.js на месте"
+
+      - name: Установить Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Проверить запуск интерфейса
+        run: node tools/smoke_test.js
+
+      - name: Установить Java
+        # Средства сборки Android требуют семнадцатую версию: более старые
+        # не поддерживаются, более новые не проверены разработчиками Gradle.
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Установить Python для значков
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Создать значки приложения
+        run: |
+          pip install pillow
+          python tools/make_android_icons.py
+
+      - name: Установить зависимости оболочки
+        working-directory: mobile
+        run: npm install
+
+      - name: Собрать веб-часть
+        working-directory: mobile
+        run: npm run build
+
+      - name: Создать проект Android
+        working-directory: mobile
+        run: |
+          npx cap add android
+          npx cap sync android
+
+      - name: Перенести значки
+        run: |
+          # Значки копируются поверх созданных оболочкой: та кладёт
+          # изображение по умолчанию, одинаковое для всех приложений.
+          cp -r mobile/android-icons/mipmap-* mobile/android/app/src/main/res/
+
+          # Описание адаптивного значка. Начиная с восьмой версии Android
+          # собирает форму сам из двух слоёв — подложки и переднего плана, —
+          # обрезая её под принятую на устройстве: круг, квадрат со
+          # скруглением или каплю. Без этих файлов значок окажется вписанным
+          # в белый квадрат.
+          mkdir -p mobile/android/app/src/main/res/mipmap-anydpi-v26
+
+          cat > mobile/android/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml <<'XML'
+          <?xml version="1.0" encoding="utf-8"?>
+          <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+              <background android:drawable="@mipmap/ic_launcher_background" />
+              <foreground android:drawable="@mipmap/ic_launcher_foreground" />
+          </adaptive-icon>
+          XML
+
+          cp mobile/android/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml \
+             mobile/android/app/src/main/res/mipmap-anydpi-v26/ic_launcher_round.xml
+
+      - name: Собрать приложение
+        working-directory: mobile/android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon
+
+      - name: Определить версию
+        id: version
+        run: |
+          VERSION=$(python -c "import sys; sys.path.insert(0, '.'); from app.config import APP_VERSION; print(APP_VERSION)")
+          echo "value=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Переименовать файл
+        run: |
+          mkdir -p release
+          cp mobile/android/app/build/outputs/apk/debug/app-debug.apk \
+             "release/MyQuestify-${{ steps.version.outputs.value }}-android.apk"
+          ls -lh release/
+
+      - name: Приложить к сборке
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-apk
+          path: release/*.apk
+          retention-days: 90
+
+      - name: Приложить к выпуску
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release/*.apk
+          fail_on_unmatched_files: true
