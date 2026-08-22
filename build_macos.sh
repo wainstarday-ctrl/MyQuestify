@@ -78,7 +78,7 @@ if [[ $SKIP_DEPS -eq 0 ]]; then
     [[ -d .venv ]] || python3 -m venv .venv
     source .venv/bin/activate
 
-    python -m pip install --upgrade pip --quiet
+    python3 -m pip install --upgrade pip --quiet
     pip install -r requirements.txt --quiet
     ok 'основные зависимости установлены'
 
@@ -118,8 +118,10 @@ step 'Значок'
 # в одном файле. Система выбирает подходящее по месту показа: в Dock,
 # в списке файлов, в окне сведений.
 if [[ ! -f assets/icon.icns ]]; then
-    if python -c 'import PIL' 2>/dev/null; then
-        python tools/make_icon.py >/dev/null 2>&1 || true
+    if python3 -c 'import PIL' 2>/dev/null; then
+        # Вывод не подавляется: при неудаче предупреждение «значок не создан»
+        # само по себе ничего не объясняет, а причина остаётся невидимой.
+        python3 tools/make_icon.py || warn 'скрипт значка завершился с ошибкой'
 
         if [[ -f assets/icon.png ]]; then
             ICONSET='assets/icon.iconset'
@@ -141,7 +143,7 @@ if [[ ! -f assets/icon.icns ]]; then
             warn 'assets/icon.png не создан — приложение получит значок по умолчанию'
         fi
     else
-        warn 'Pillow не установлен — значок пропущен'
+        warn 'Pillow не установлен — приложение получит значок по умолчанию'
     fi
 else
     ok 'значок уже существует'
@@ -155,8 +157,12 @@ step 'Сборка приложения'
 
 rm -rf build dist
 
-ICON_ARG=()
-[[ -f assets/icon.icns ]] && ICON_ARG=(--icon assets/icon.icns)
+# Ключ значка добавляется отдельной переменной, а не элементом массива.
+# В macOS используется оболочка версии 3.2, где раскрытие пустого массива
+# при включённой проверке необъявленных переменных считается обращением к
+# необъявленной и прерывает выполнение.
+ICON_ARG=''
+[[ -f assets/icon.icns ]] && ICON_ARG='--icon assets/icon.icns'
 
 # Ключ --windowed создаёт приложение без окна терминала. Сжатие UPX
 # отключено: оно повреждает нативные библиотеки llama.cpp и вызывает
@@ -167,7 +173,7 @@ pyinstaller \
     --noconfirm \
     --clean \
     --noupx \
-    "${ICON_ARG[@]}" \
+    $ICON_ARG \
     --add-data 'static:static' \
     --add-data 'templates:templates' \
     --osx-bundle-identifier com.myquestify.app \

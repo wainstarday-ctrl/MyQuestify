@@ -33,6 +33,11 @@ from PIL import Image, ImageDraw
 ROOT = Path(__file__).resolve().parent.parent
 TARGET = ROOT / "assets" / "icon.ico"
 
+#: Тот же рисунок в обычном формате. Нужен сборке для macOS: система
+#: собирает свой набор значков из отдельных изображений, и утилита sips,
+#: выполняющая это преобразование, формат ICO не читает.
+TARGET_PNG = ROOT / "assets" / "icon.png"
+
 # Палитра из static/css/style.css
 BG = (18, 18, 18, 255)          # --bg
 EMERALD = (16, 185, 129)        # --emerald
@@ -119,11 +124,23 @@ def build_image() -> Image.Image:
 
 
 def main() -> None:
-    """Сохраняет многоразмерный ICO рядом с ресурсами приложения."""
+    """Сохраняет значок в двух форматах рядом с ресурсами приложения.
+
+    ICO требуется сборке для Windows, PNG — сборке для macOS: там из
+    отдельных изображений собирается набор средствами системы, и утилита
+    преобразования формат ICO не читает.
+    """
     TARGET.parent.mkdir(parents=True, exist_ok=True)
     image = build_image()
+
     image.save(TARGET, format="ICO", sizes=ICON_SIZES)
-    print(f"Иконка сохранена: {TARGET}")
+    print(f"Значок сохранён: {TARGET}")
+
+    # Наибольший из размеров: система уменьшает изображение сама, а
+    # увеличение потребовалось бы при слишком мелком исходнике.
+    largest = max(size[0] for size in ICON_SIZES)
+    image.resize((largest * 2, largest * 2), Image.LANCZOS).save(TARGET_PNG, format="PNG")
+    print(f"Значок сохранён: {TARGET_PNG}")
 
 
 if __name__ == "__main__":
