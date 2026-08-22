@@ -1329,6 +1329,16 @@
     }
 
     document.documentElement.dataset.theme = settings.theme;
+
+    // Строка состояния окрашивается под тему: светлые значки на светлом
+    // фоне становятся невидимыми.
+    if (window.MobileShell) { window.MobileShell.applyTheme(settings.theme); }
+
+    // Памятка обновляется при каждом применении настроек, поэтому следующий
+    // запуск начнётся сразу с верного оформления.
+    if (window.I18n) {
+      window.I18n.remember(settings.language || 'ru', settings.theme);
+    }
     document.documentElement.dataset.motion =
       settings.reduce_motion ? 'reduced' : 'full';
 
@@ -2325,7 +2335,75 @@
     });
   }
 
+  /**
+   * Обрабатывает аппаратную кнопку «назад».
+   *
+   * Порядок проверок повторяет вложенность интерфейса: сначала закрывается
+   * самое верхнее из открытого. Возврат ``false`` означает, что закрывать
+   * нечего, и оболочка свернёт приложение.
+   *
+   * @returns {boolean} было ли нажатие обработано
+   */
+  function handleBackButton() {
+    var openModal = Object.keys(MODALS).filter(function (name) {
+      return MODALS[name] && !MODALS[name].hidden;
+    })[0];
+
+    if (openModal) {
+      closeModal(openModal);
+      return true;
+    }
+
+    // Предпросмотр сцены — тоже состояние, из которого ожидают выйти назад.
+    if (state.previewScene) {
+      exitPreview();
+      return true;
+    }
+
+    // Из беседы с Оракулом возвращаемся к сцене: это переключение вида,
+    // а не отдельный экран, но воспринимается именно как вложенность.
+    if (state.activeView === 'oracle') {
+      switchView('scene');
+      return true;
+    }
+
+    return false;
+  }
+
+  /**
+   * Перечитывает данные после длительного отсутствия.
+   *
+   * За время, пока приложение было свёрнуто, сроки могли пройти, а
+   * напоминания — сработать. Состояние приводится в соответствие
+   * действительности без перезапуска.
+   */
+  function handleResume() {
+    api.sweepOverdue().then(function (sweep) {
+      if (sweep && sweep.failed && sweep.failed.length) {
+        renderTokens(sweep.focus_tokens);
+        toast(
+          t('toast.overdue', 'Просрочено квестов:') + ' ' + sweep.failed.length +
+          '. ' + sweep.tokens_lost + ' FT ' + t('toast.overdueTail', 'списано.'),
+          'error'
+        );
+      }
+      return api.listTasks();
+    }).then(function (tasks) {
+      state.tasks = tasks;
+      renderTasks();
+      return reloadProgress();
+    }).catch(function () {
+      // Возвращение не должно оборачиваться сообщением об ошибке: данные
+      // на экране остаются прежними, и это лучше, чем пустой список.
+    });
+  }
+
   function boot() {
+    // Запомненное оформление применяется до показа заставки: иначе цитата
+    // всегда была бы на языке по умолчанию, а светлая тема мигала бы
+    // тёмным фоном, пока не придут настройки.
+    if (window.I18n) { window.I18n.restore(); }
+
     if (window.Splash) { window.Splash.show(); }
 
     cacheDom();
@@ -2352,14 +2430,19 @@
       dom.editPicker = window.Controls.dateTimePicker(dom.editDeadline);
     }
 
+    if (window.MobileShell) {
+      window.MobileShell.init({
+        onBack: handleBackButton,
+        onResume: handleResume
+      });
+    }
+
     bindEvents();
     updateRewardPreview();
 
-    // Настройки применяются первыми: тема должна встать до первой отрисовки
-    // данных, иначе интерфейс мигнёт тёмным и перекрасится.
-    api.getSettings().then(applySettings).catch(function () {
-      /* значения по умолчанию уже в разметке */
-    });
+    // Настройки применяются до первой отрисовки данных, иначе интерфейс
+    // мигнёт тёмным и перекрасится. Но запрашиваются они уже после
+    // подготовки хранилища — см. startSession.
 
     try {
       window.Stage.init({
@@ -2373,8 +2456,6 @@
       toast('Сцена недоступна: ' + error.message, 'error');
     }
 
-    refreshEngineStatus();
-
     // Каждый шаг запуска изолирован: исключение в одном не должно оставить
     // приложение с пустым экраном, как это случилось с отсутствующим
     // Stage.resize() — одна ошибка обрывала загрузку задач и сцен.
@@ -2384,6 +2465,10 @@
       console.error('Не удалось переключить вид:', error);
     }
 
+    // Подготовка хранилища предшествует любому запросу. В мобильной сборке
+    // сервера нет, и обращение, отправленное раньше, ушло бы в пустоту:
+    // приложение сообщило бы о недоступности при полностью исправной
+    // работе.
     prepareStorage().then(startSession);
   }
 
@@ -2394,6 +2479,15 @@
    * подготовка хранилища, и объединение оставило бы вложенные обещания.
    */
   function startSession() {
+    // Проверка наличия модели — тоже обращение к данным, поэтому она
+    // выполняется здесь, а не в boot: в мобильной сборке запрос, ушедший
+    // раньше готовности хранилища, попадает в пустоту.
+    refreshEngineStatus();
+
+    api.getSettings().then(applySettings).catch(function () {
+      /* значения по умолчанию уже в разметке */
+    });
+
     // Просрочка проверяется до загрузки списка: пока приложение было
     // закрыто, сроки могли пройти, и пользователь должен увидеть это сразу,
     // а не после первого же обновления.

@@ -137,8 +137,8 @@
                   data-i18n-title="agenda.next" aria-label="Следующий месяц">›</button>
         </div>
         <div class="agenda__weekdays">
-          <span>Пн</span><span>Вт</span><span>Ср</span><span>Чт</span>
-          <span>Пт</span><span>Сб</span><span>Вс</span>
+          <span data-i18n="weekday.mon">Пн</span><span data-i18n="weekday.tue">Вт</span><span data-i18n="weekday.wed">Ср</span><span data-i18n="weekday.thu">Чт</span>
+          <span data-i18n="weekday.fri">Пт</span><span data-i18n="weekday.sat">Сб</span><span data-i18n="weekday.sun">Вс</span>
         </div>
         <div class="agenda__grid" id="agenda-grid"></div>
         <div class="progress" id="progress-panel">
@@ -163,7 +163,7 @@
     <section class="panel panel--scene glass" aria-labelledby="scene-title">
       <header class="panel__head">
         <p class="eyebrow" id="scene-eyebrow" data-i18n="scene.eyebrow">Сцена</p>
-        <h2 class="panel__title" id="scene-title">Сцена</h2>
+        <h2 class="panel__title" id="scene-title" data-i18n="scene.tab">Сцена</h2>
         <p class="panel__meta">
           <span data-i18n="scene.level">Уровень</span>
           <span class="level" id="tree-level">1</span>
@@ -270,7 +270,7 @@
       <header class="modal__head">
         <div>
           <p class="eyebrow" data-i18n="chain.eyebrow">Цепочка мыслей</p>
-          <h2 class="modal__title" id="thoughts-title">Квест</h2>
+          <h2 class="modal__title" id="thoughts-title" data-i18n="edit.title">Квест</h2>
         </div>
         <button class="modal__close" type="button" data-close="thoughts" aria-label="Закрыть">×</button>
       </header>
@@ -442,18 +442,18 @@
         </div>
 
         <div class="field">
-          <label class="field__label" for="edit-hours">Часов</label>
+          <label class="field__label" for="edit-hours" data-i18n="composer.hours">Часов</label>
           <input class="field__input field__input--num" id="edit-hours" type="number"
                  min="1" max="24" step="1" value="2" inputmode="numeric">
         </div>
 
         <div class="field">
-          <label class="field__label" for="edit-deadline">Дедлайн</label>
+          <label class="field__label" for="edit-deadline" data-i18n="composer.deadline">Дедлайн</label>
           <input class="field__input" id="edit-deadline" type="datetime-local">
         </div>
 
         <div class="field field--wide">
-          <span class="field__label">Приоритет</span>
+          <span class="field__label" data-i18n="composer.priority">Приоритет</span>
           <div class="segmented segmented--priority" id="edit-priority">
             <button class="segmented__option" type="button" data-priority="low" data-i18n="priority.low">Спокойно</button>
             <button class="segmented__option is-active" type="button" data-priority="normal" data-i18n="priority.normal">Обычно</button>
@@ -576,6 +576,7 @@
   <script src="/static/js/controls.js"></script>
   <script src="/static/js/splash.js"></script>
   <script src="/static/js/mobile-notify.js"></script>
+  <script src="/static/js/mobile-shell.js"></script>
   <script src="/static/js/app.js"></script>
 </body>
 </html>

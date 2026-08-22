@@ -114,6 +114,16 @@
 
       node.hidden = false;
       shownAt = performance.now();
+
+      // Заставка оболочки убирается только теперь, когда своя уже на
+      // экране: скрытие по готовности приложения давало бы белую вспышку
+      // между двумя заставками.
+      if (global.Capacitor && global.Capacitor.Plugins &&
+          global.Capacitor.Plugins.SplashScreen) {
+        global.Capacitor.Plugins.SplashScreen.hide()
+          .catch(function () { /* заставка могла быть скрыта раньше */ });
+      }
+
       return global.Splash;
     },
 

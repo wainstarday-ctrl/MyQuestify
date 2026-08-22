@@ -11,6 +11,17 @@
     "LocalNotifications": {
       "smallIcon": "ic_stat_icon",
       "iconColor": "#10b981"
+    },
+    "SplashScreen": {
+      "launchAutoHide": false,
+      "backgroundColor": "#0c0b14",
+      "androidSpinnerStyle": "small",
+      "spinnerColor": "#10b981"
+    },
+    "StatusBar": {
+      "style": "DARK",
+      "backgroundColor": "#12121a",
+      "overlaysWebView": false
     }
   },
   "server": {

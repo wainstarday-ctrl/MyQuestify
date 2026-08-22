@@ -39,6 +39,8 @@ APP_VERSION: Final[str] = "1.6.0"
 
 IS_FROZEN: Final[bool] = bool(getattr(sys, "frozen", False))
 IS_WINDOWS: Final[bool] = sys.platform.startswith("win")
+IS_MACOS: Final[bool] = sys.platform == "darwin"
+IS_LINUX: Final[bool] = sys.platform.startswith("linux")
 
 
 def _resolve_resource_dir() -> Path:
@@ -64,8 +66,13 @@ def _resolve_data_dir() -> Path:
     if IS_WINDOWS:
         base = os.environ.get("LOCALAPPDATA") or os.environ.get("APPDATA")
         root = Path(base) if base else Path.home() / "AppData" / "Local"
+    elif IS_MACOS:
+        # Принятое в macOS место для данных приложения. Каталог не скрыт и
+        # попадает в резервные копии Time Machine, в отличие от скрытых
+        # путей, куда система резервирование не распространяет.
+        root = Path.home() / "Library" / "Application Support"
     else:
-        # Задел под будущие платформы: XDG-совместимый путь.
+        # Linux и прочие: путь по соглашению XDG.
         root = Path(os.environ.get("XDG_DATA_HOME") or (Path.home() / ".local" / "share"))
 
     return root / APP_NAME

@@ -47,6 +47,7 @@ import webview
 from app.config import (
     APP_NAME,
     APP_VERSION,
+    IS_MACOS,
     DATA_DIR,
     IS_FROZEN,
     IS_WINDOWS,
@@ -432,7 +433,16 @@ def main() -> int:
 
     # На Windows бэкенд задаётся явно: автоопределение может выбрать устаревший
     # MSHTML, в котором backdrop-filter и Matter.js работать не будут.
-    gui_backend = "edgechromium" if IS_WINDOWS else None
+    # Компонент просмотра задаётся явно там, где автоматический выбор
+    # ненадёжен. На Windows он может подставить устаревший MSHTML, где не
+    # работают ни backdrop-filter, ни физический движок. На macOS выбирать
+    # не из чего: WebKit входит в систему и всегда достаточно свеж.
+    if IS_WINDOWS:
+        gui_backend = "edgechromium"
+    elif IS_MACOS:
+        gui_backend = None
+    else:
+        gui_backend = "gtk"
 
     try:
         # Блокирующий вызов: возвращает управление после закрытия окна.

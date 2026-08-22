@@ -67,6 +67,16 @@
       'tasks.empty': 'No quests yet. Describe the first one and the model will add a word of encouragement.',
 
       // ---- календарь ----
+      // Сокращения дней недели в календаре квестов. Собственный календарь
+      // выбора срока строит их кодом, здесь же они заданы разметкой.
+      'weekday.mon': 'Mo',
+      'weekday.tue': 'Tu',
+      'weekday.wed': 'We',
+      'weekday.thu': 'Th',
+      'weekday.fri': 'Fr',
+      'weekday.sat': 'Sa',
+      'weekday.sun': 'Su',
+
       'agenda.prev': 'Previous month',
       'agenda.next': 'Next month',
       'agenda.legend.high': 'urgent',
@@ -271,6 +281,54 @@
   var current = 'ru';
 
   /**
+   * Ключ памятки оформления в хранилище браузера.
+   *
+   * Язык и тема хранятся в настройках, но те читаются с задержкой: сначала
+   * готовится хранилище, потом уходит запрос. Экран загрузки к этому моменту
+   * уже показан, и до ответа он был бы на языке по умолчанию — то есть
+   * пользователь, выбравший английский, каждый раз видел бы русскую цитату,
+   * а выбравший светлую тему — вспышку тёмного фона.
+   *
+   * Памятка решает именно это: два значения записываются при каждом
+   * изменении и читаются мгновенно, ещё до первого запроса. Источником
+   * истины остаются настройки — памятка лишь позволяет угадать верно.
+   */
+  var CACHE_KEY = 'myquestify.appearance';
+
+  /**
+   * Читает памятку оформления.
+   *
+   * @returns {Object} сохранённые язык и тема либо пустой объект
+   */
+  function readCache() {
+    try {
+      return JSON.parse(global.localStorage.getItem(CACHE_KEY)) || {};
+    } catch (error) {
+      // Хранилище может быть недоступно: приватный режим, запрет политикой.
+      // Отсутствие памятки не мешает работе, лишь возвращает прежнее
+      // поведение с оформлением по умолчанию.
+      return {};
+    }
+  }
+
+  /**
+   * Сохраняет памятку оформления.
+   *
+   * @param {string} language код языка
+   * @param {string} theme тема оформления
+   */
+  function writeCache(language, theme) {
+    try {
+      global.localStorage.setItem(CACHE_KEY, JSON.stringify({
+        language: language,
+        theme: theme
+      }));
+    } catch (error) {
+      /* запись необязательна */
+    }
+  }
+
+  /**
    * Переводит ключ на текущий язык.
    *
    * @param {string} key ключ словаря
@@ -358,6 +416,38 @@
     set: function (language) {
       current = (language === 'en') ? 'en' : 'ru';
       apply();
+    },
+
+    /**
+     * Применяет запомненное оформление до получения настроек.
+     *
+     * Вызывается первой строкой запуска, чтобы экран загрузки появился
+     * сразу на верном языке и в верной теме. Если памятки нет — первый
+     * запуск или очищенное хранилище, — остаётся оформление по умолчанию.
+     *
+     * @returns {Object} применённые значения
+     */
+    restore: function () {
+      var cache = readCache();
+
+      if (cache.language) {
+        current = cache.language === 'en' ? 'en' : 'ru';
+        apply();
+      }
+      if (cache.theme) {
+        document.documentElement.dataset.theme = cache.theme;
+      }
+      return cache;
+    },
+
+    /**
+     * Запоминает оформление для следующего запуска.
+     *
+     * @param {string} language код языка
+     * @param {string} theme тема
+     */
+    remember: function (language, theme) {
+      writeCache(language, theme);
     },
 
     /** Текущий язык. */
