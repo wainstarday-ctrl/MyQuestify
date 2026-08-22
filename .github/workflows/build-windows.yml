@@ -89,6 +89,38 @@ jobs:
           $size = [math]::Round((Get-Item $exe).Length / 1MB, 1)
           Write-Host "Собрано: $exe ($size МБ)"
 
+      - name: Загрузить веса модели
+        uses: ./.github/actions/fetch-model
+        with:
+          target-dir: models
+
+      - name: Собрать выпуск с моделью
+        shell: pwsh
+        run: |
+          # Веса кладутся рядом с приложением, а не внутрь него. При
+          # встраивании PyInstaller распаковывал бы гигабайт во временный
+          # каталог при каждом запуске; приложение вместо этого переносит
+          # файл в свой каталог данных однократно, при первом открытии.
+          New-Item -ItemType Directory -Path dist/with-model -Force | Out-Null
+          Copy-Item dist/MyQuestify.exe dist/with-model/
+          New-Item -ItemType Directory -Path dist/with-model/models -Force | Out-Null
+          Copy-Item models/model.gguf dist/with-model/models/
+
+          $version = python -c "import sys; sys.path.insert(0, '.'); from app.config import APP_VERSION; print(APP_VERSION)"
+          $zip = "dist/MyQuestify-$version-windows-with-model.zip"
+          Compress-Archive -Path dist/with-model/* -DestinationPath $zip -CompressionLevel Optimal
+
+          $mb = [math]::Round((Get-Item $zip).Length / 1MB)
+          Write-Host "Собрано: $zip — $mb МБ"
+
+          # Предел вложения к выпуску — два гигабайта. Проверка здесь
+          # избавляет от отказа на шаге публикации, когда время уже
+          # потрачено на сборку и упаковку.
+          if ($mb -gt 1900) {
+            Write-Error "Архив превышает предел вложения: $mb МБ"
+            exit 1
+          }
+
       - name: Приложить к запуску (артефакт)
         uses: actions/upload-artifact@v4
         with:
@@ -105,19 +137,27 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/MyQuestify.exe
+          files: |
+            dist/MyQuestify.exe
+            dist/*-with-model.zip
           fail_on_unmatched_files: true
           name: MyQuestify ${{ github.ref_name }}
           body: |
             ## Загрузка
 
-            | Файл | Платформа |
-            |---|---|
-            | `MyQuestify.exe` | Windows 10 и 11 |
-            | `MyQuestify-*-macos.dmg` | macOS |
-            | `MyQuestify-*-android.apk` | Android 6 и выше |
+            | Файл | Платформа | Модель |
+            |---|---|---|
+            | `MyQuestify.exe` | Windows 10 и 11 | подключается отдельно |
+            | `MyQuestify-*-windows-with-model.zip` | Windows 10 и 11 | входит в состав |
+            | `MyQuestify-*-macos.dmg` | macOS | подключается отдельно |
+            | `MyQuestify-*-macos-with-model.dmg` | macOS | входит в состав |
+            | `MyQuestify-*-android.apk` | Android 6 и выше | не поддерживается |
 
             Установка не требуется: распакуйте и запустите.
+
+            Выпуски с моделью весят около 1.1 ГБ и работают сразу после
+            распаковки. Лёгкие загружаются быстрее, а модель к ним
+            подключается позже.
 
             **Windows.** Нужен компонент Microsoft Edge WebView2. На
             Windows 11 он установлен изначально; для Windows 10 доступен

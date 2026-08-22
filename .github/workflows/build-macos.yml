@@ -96,6 +96,48 @@ jobs:
           done
           ls -lh *.dmg
 
+      - name: Загрузить веса модели
+        uses: ./.github/actions/fetch-model
+        with:
+          target-dir: models
+
+      - name: Собрать выпуск с моделью
+        run: |
+          set -euo pipefail
+
+          # Приложение в macOS — каталог со строгой раскладкой. Веса
+          # кладутся в Contents/Resources: это принятое место для
+          # сопутствующих файлов, и приложение проверяет его при запуске.
+          # Файл рядом с приложением система при переносе не захватила бы,
+          # и веса потерялись бы при первом же перемещении значка.
+          APP='dist/with-model/MyQuestify.app'
+          mkdir -p dist/with-model
+          cp -R dist/MyQuestify.app dist/with-model/
+
+          mkdir -p "$APP/Contents/Resources/models"
+          cp models/model.gguf "$APP/Contents/Resources/models/model.gguf"
+
+          VERSION="${{ steps.version.outputs.value }}"
+          STAGE='dist/dmg-model'
+          rm -rf "$STAGE"
+          mkdir -p "$STAGE"
+          cp -R "$APP" "$STAGE/"
+          ln -s /Applications "$STAGE/Applications"
+
+          DMG="dist/MyQuestify-${VERSION}-macos-with-model.dmg"
+          hdiutil create -volname 'MyQuestify' -srcfolder "$STAGE" \
+              -ov -format UDZO "$DMG" >/dev/null
+          rm -rf "$STAGE" dist/with-model
+
+          SIZE_MB=$(( $(stat -f%z "$DMG") / 1024 / 1024 ))
+          echo "Собрано: $DMG — ${SIZE_MB} МБ"
+
+          # Предел вложения к выпуску — два гигабайта.
+          if [ "$SIZE_MB" -gt 1900 ]; then
+            echo "::error::Образ превышает предел вложения: ${SIZE_MB} МБ"
+            exit 1
+          fi
+
       - name: Приложить к сборке
         uses: actions/upload-artifact@v4
         with:

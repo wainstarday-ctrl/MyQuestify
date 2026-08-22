@@ -328,6 +328,16 @@ def _bundled_model_candidates() -> list:
         # На уровень выше каталога ресурсов — вариант раскладки _internal.
         candidates.append(RESOURCE_DIR.parent / "models" / "model.gguf")
 
+        if IS_MACOS:
+            # Приложение в macOS — каталог со строгой раскладкой, где
+            # исполняемый файл лежит в Contents/MacOS, а сопутствующие
+            # файлы в Contents/Resources. Путь строится от исполняемого
+            # файла, а не поиском по имени: имя приложения задаётся при
+            # сборке и может измениться.
+            contents = executable_dir.parent
+            candidates.append(contents / "Resources" / "models" / "model.gguf")
+            candidates.append(contents / "MacOS" / "models" / "model.gguf")
+
     # Порядок сохраняется, повторы отбрасываются: один и тот же путь может
     # получиться разными способами при совпадении каталогов.
     unique = []
