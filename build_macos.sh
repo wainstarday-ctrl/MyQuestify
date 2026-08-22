@@ -97,8 +97,15 @@ if [[ $SKIP_DEPS -eq 0 ]]; then
     pip install pyinstaller --quiet
     ok 'pyinstaller установлен'
 else
-    source .venv/bin/activate
-    ok 'зависимости пропущены по ключу'
+    # Окружение активируется, только если оно есть. На машине сборки его не
+    # создают: зависимости ставятся глобально отдельным шагом, и попытка
+    # активации несуществующего каталога прерывала бы сборку.
+    if [[ -f .venv/bin/activate ]]; then
+        source .venv/bin/activate
+        ok 'используется окружение .venv'
+    else
+        ok 'окружение не найдено, используется системный Python'
+    fi
 fi
 
 # --------------------------------------------------------------------------- #
@@ -205,7 +212,7 @@ ok 'Info.plist дополнен'
 if [[ $MAKE_DMG -eq 1 ]]; then
     step 'Образ диска'
 
-    VERSION="$(python -c 'import sys; sys.path.insert(0, "."); from app.config import APP_VERSION; print(APP_VERSION)')"
+    VERSION="$(python3 -c 'import sys; sys.path.insert(0, "."); from app.config import APP_VERSION; print(APP_VERSION)')"
     DMG="dist/MyQuestify-${VERSION}-macos.dmg"
     STAGE='dist/dmg'
 

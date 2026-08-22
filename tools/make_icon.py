@@ -15,6 +15,16 @@
 
 from __future__ import annotations
 
+import sys
+
+# Консоль машины сборки под Windows работает в однобайтовой кодировке и
+# отвергает кириллицу в выводе, прерывая скрипт ошибкой. Перенастройка
+# потока избавляет от этого, сохраняя сообщения читаемыми там, где
+# кодировка их принимает.
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 import math
 from pathlib import Path
 
