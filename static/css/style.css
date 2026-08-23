@@ -3312,3 +3312,161 @@ button.chat__more:hover {
   .chat { height: 60vh; }
   .splash__quote { display: none; }
 }
+
+/* ==========================================================================
+   ЭКРАН ЗАГРУЗКИ В СВЕТЛОЙ ТЕМЕ
+   --------------------------------------------------------------------------
+   Заставка появляется первой, до отрисовки интерфейса, и остаётся на экране
+   несколько секунд. Тёмная вспышка перед светлым приложением заметнее, чем
+   где-либо ещё: глазу не с чем её сравнить, и она читается как сбой.
+
+   Тема восстанавливается из памятки в хранилище браузера ещё до показа
+   заставки, поэтому правила ниже успевают примениться с первого кадра.
+   ========================================================================== */
+
+:root[data-theme="light"] .splash {
+  background:
+    radial-gradient(120% 90% at 50% 20%, rgba(139, 92, 246, 0.1), transparent 60%),
+    radial-gradient(100% 80% at 50% 100%, rgba(16, 185, 129, 0.08), transparent 55%),
+    #eef0f6;
+}
+
+:root[data-theme="light"] .splash__name { color: #1a1b22; }
+:root[data-theme="light"] .splash__name em { color: #6234c0; }
+:root[data-theme="light"] .splash__tag { color: #7a7f92; }
+:root[data-theme="light"] .splash__quote { color: #33364a; }
+:root[data-theme="light"] .splash__author { color: #7a7f92; }
+
+/* Полоса ожидания на светлом фоне нуждается в подложке: без неё видно
+   только бегущий отрезок, и непонятно, какой путь он проходит. */
+:root[data-theme="light"] .splash__bar {
+  background: rgba(30, 36, 60, 0.1);
+}
+
+:root[data-theme="light"] .splash__bar i {
+  background: linear-gradient(90deg, transparent, #6234c0, transparent);
+}
+
+/* Знак приложения светится на тёмном фоне; на светлом свечение
+   превращается в грязное пятно, поэтому заменяется мягкой тенью. */
+:root[data-theme="light"] .splash__mark {
+  box-shadow: 0 8px 28px rgba(98, 52, 192, 0.22);
+}
+
+/* ==========================================================================
+   СВОРАЧИВАНИЕ ЗАВЕРШЁННЫХ КВЕСТОВ
+   ========================================================================== */
+
+.tasks__fold {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  margin-top: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--glass-line);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: color 0.16s ease, border-color 0.16s ease, background 0.16s ease;
+}
+
+.tasks__fold:hover {
+  color: var(--text);
+  border-color: rgba(255, 255, 255, 0.24);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.tasks__fold-arrow {
+  font-size: 11px;
+  line-height: 1;
+  color: var(--text-faint);
+}
+
+/* Завершённые приглушены: они видны при разворачивании, но не спорят за
+   внимание с тем, что ещё предстоит сделать. */
+.tasks__done { opacity: 0.72; }
+.tasks__done .task { margin-top: 8px; }
+
+:root[data-theme="light"] .tasks__fold {
+  background: rgba(30, 36, 60, 0.04);
+  border-color: rgba(30, 36, 60, 0.12);
+}
+
+:root[data-theme="light"] .tasks__fold:hover {
+  background: rgba(30, 36, 60, 0.07);
+}
+
+/* ==========================================================================
+   ИСПРАВЛЕНИЯ ВЁРСТКИ НА ТЕЛЕФОНЕ
+   ========================================================================== */
+
+@media (max-width: 560px), (pointer: coarse) and (max-width: 900px) {
+  /* Шкала часов набирается делениями фиксированной ширины и при большой
+     оценке выходит за карточку, наезжая на соседние элементы. Перенос по
+     строкам сохраняет читаемость: деления остаются счётными, а карточка
+     не расползается. */
+  .task__scale {
+    flex-wrap: wrap;
+    max-width: 100%;
+    gap: 2px;
+  }
+
+  .task__hours {
+    flex: 0 0 auto;
+    white-space: nowrap;
+  }
+
+  /* Заголовок карточки и награда в одну строку не помещаются: длинное
+     название вытесняет число за край. */
+  .task__head {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .task__title {
+    flex: 1 1 100%;
+    order: 2;
+  }
+
+  .task__reward { order: 1; }
+
+  /* Действия над квестом на телефоне видны всегда: наведения там нет, и
+     скрытые до наведения кнопки остаются недоступными. */
+  .task__tools { opacity: 1; }
+  .task__tools .chain__act { width: 40px; height: 40px; font-size: 16px; }
+
+  /* Паутина рассуждений: на узком экране она получала меньше трети
+     высоты, узлы сливались в точку, и разобрать связи было невозможно. */
+  .web {
+    height: 62vh;
+    min-height: 320px;
+    margin: 0 12px 12px;
+  }
+
+  /* Вложенный список мыслей: отступ на каждый уровень съедал ширину, и к
+     третьему уровню текст шёл по одному слову в строке. */
+  .chain__list { padding-left: 12px; }
+  .chain__row { padding: 10px 8px; gap: 6px; }
+  .chain__text { font-size: 14px; line-height: 1.45; }
+
+  /* Кнопки действий над мыслью — цель для пальца. */
+  .chain__act { width: 38px; height: 38px; }
+
+  /* Окно цепочки мыслей раскрывается во весь экран, поэтому содержимому
+     можно отдать всю оставшуюся высоту. */
+  .chain { max-height: none; flex: 1 1 auto; }
+}
+
+/* Узкие экраны без сенсорного ввода — окно браузера, сжатое по ширине. */
+@media (max-width: 420px) {
+  .task__scale { gap: 1px; }
+  .task__scale i { width: 5px; }
+  .composer { gap: 10px; }
+  .field--wide { min-width: 0; }
+}

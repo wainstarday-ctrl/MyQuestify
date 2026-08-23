@@ -298,6 +298,49 @@
   }
 
   /**
+   * Системные инструкции для модели.
+   *
+   * Повторяют настольные, но короче: модель на полмиллиарда параметров
+   * теряет нить длинной инструкции, а каждый лишний токен в промпте
+   * заметно замедляет ответ на телефоне.
+   */
+  var PROMPTS = {
+    motivation: {
+      ru: 'Ты краткий наставник. Ответь ОДНОЙ мотивирующей фразой на русском. Не более 15 слов.',
+      en: 'You are a brief mentor. Reply with ONE motivating sentence in English. No more than 15 words.'
+    },
+    oracle: {
+      ru: 'Ты Оракул, голос древнего мыслителя. Отвечай по-русски, спокойно, не более двух предложений. Возвращай собеседника к посильному шагу.',
+      en: 'You are the Oracle, voice of an ancient thinker. Answer in English, calmly, no more than two sentences. Return your companion to a manageable step.'
+    }
+  };
+
+  /**
+   * Порождает текст моделью, если она доступна.
+   *
+   * Возвращает заготовленную фразу при любой неудаче: отсутствие модели,
+   * отказ устройства по памяти, ошибка вычисления. Приложение обязано
+   * работать без модели, поэтому вызывающий код о её наличии не знает.
+   *
+   * @param {string} kind motivation или oracle
+   * @param {string} input текст запроса
+   * @returns {Promise<string>} непустой текст
+   */
+  function generate(kind, input) {
+    var language = state.settings.language || 'ru';
+
+    if (!global.LocalLLM) { return Promise.resolve(phrase()); }
+
+    return global.LocalLLM.generate(
+      PROMPTS[kind][language] || PROMPTS[kind].ru,
+      input,
+      { language: language, temperature: kind === 'oracle' ? 0.7 : 0.5 }
+    ).then(function (text) {
+      return text || phrase();
+    });
+  }
+
+  /**
    * Применяет штрафы за просрочку.
    *
    * Логика повторяет серверную: отсрочка в четверть часа, баланс не уходит
@@ -371,11 +414,12 @@
     ['GET', '/api/tasks/', function () {
       var order = { high: 1, normal: 2, low: 3 };
       return state.tasks.slice().sort(function (a, b) {
-        // Порядок совпадает с серверным: сначала открытые, затем по
-        // приоритету, сроку и дате создания.
-        var openA = a.status === 'pending' ? 0 : 1;
-        var openB = b.status === 'pending' ? 0 : 1;
-        if (openA !== openB) { return openA - openB; }
+        // Порядок совпадает с серверным. Вниз уходит только завершённое:
+        // просроченный квест можно доделать, и в конце списка он был бы
+        // забыт.
+        var doneA = a.status === 'completed' ? 1 : 0;
+        var doneB = b.status === 'completed' ? 1 : 0;
+        if (doneA !== doneB) { return doneA - doneB; }
 
         var prioA = order[a.priority || 'normal'];
         var prioB = order[b.priority || 'normal'];
@@ -397,14 +441,20 @@
         priority: body.priority || 'normal',
         deadline: body.deadline || null,
         status: 'pending',
-        motivation: phrase(),
+        motivation: '',
         created_at: nowIso(),
         completed_at: null,
         penalty: 0
       };
       task.reward = calcReward(task.estimated_hours, task.priority);
       state.tasks.push(task);
-      return serializeTask(task);
+
+      var label = (state.settings.language === 'en') ? 'Task' : 'Задача';
+      return generate('motivation', label + ': ' + task.title)
+        .then(function (text) {
+          task.motivation = text;
+          return serializeTask(task);
+        });
     }],
 
     ['PATCH', '/api/tasks/:id/complete', function (body, params) {
@@ -659,13 +709,29 @@
         ? global.OracleSafety.screen(message, language)
         : { verdict: 'allow', reply: null };
 
-      var reply = verdict.reply || phrase();
-      state.oracle.push({
-        id: state.nextMessageId++, role: 'oracle',
-        content: reply, created_at: nowIso()
-      });
+      // Перехваченный защитой ответ выдаётся как есть: модель к нему
+      // отношения не имеет, и обращаться к ней незачем.
+      if (verdict.verdict !== 'allow') {
+        state.oracle.push({
+          id: state.nextMessageId++, role: 'oracle',
+          content: verdict.reply, created_at: nowIso()
+        });
+        return { reply: verdict.reply, guarded: true };
+      }
 
-      return { reply: reply, guarded: verdict.verdict !== 'allow' };
+      return generate('oracle', message).then(function (reply) {
+        // Готовый ответ проверяется повторно: модель может свернуть в
+        // опасную тему сама, даже если вопрос был безобидным.
+        var checked = global.OracleSafety
+          ? global.OracleSafety.guard(reply, language)
+          : reply;
+
+        state.oracle.push({
+          id: state.nextMessageId++, role: 'oracle',
+          content: checked, created_at: nowIso()
+        });
+        return { reply: checked, guarded: checked !== reply };
+      });
     }],
 
     ['DELETE', '/api/oracle/', function () { state.oracle = []; return null; }],
@@ -800,7 +866,13 @@
 
         try {
           var result = ROUTES[i][2](body, params, query);
-          return persist().then(function () { return result; });
+
+          // Обработчик вправе вернуть обещание: генерация текста моделью
+          // занимает секунды. Сохранение выполняется после его разрешения,
+          // иначе в хранилище попало бы состояние без результата.
+          return Promise.resolve(result).then(function (value) {
+            return persist().then(function () { return value; });
+          });
         } catch (error) {
           return Promise.reject(error);
         }

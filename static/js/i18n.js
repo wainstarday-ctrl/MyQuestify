@@ -64,6 +64,7 @@
       'status.failed': 'failed',
       'status.overdue': 'overdue',
       'tasks.loading': 'Loading tasks…',
+      'tasks.completed': 'Completed',
       'tasks.empty': 'No quests yet. Describe the first one and the model will add a word of encouragement.',
 
       // ---- календарь ----
@@ -107,6 +108,12 @@
       'hint.pond': 'Sweep across the water — ripples spread and push the lily pads. The leaves can be picked up.',
       'hint.weave': 'Pull any node — the net stretches and resists. Release it and it springs back into balance.',
       'hint.campfire': 'Tap near the top to toss in a log. Sweep your hand over the fire to fan it and swirl the sparks.',
+      'hint.clouds': 'Tap a cloud and it gathers into a storm with rain; press repeatedly and lightning strikes. Drag the sun to change the time of day.',
+      // Подписи времени суток, которые сцена рисует на холсте.
+      'sky.ночь': 'NIGHT',
+      'sky.рассвет': 'DAWN',
+      'sky.день': 'DAY',
+      'sky.закат': 'DUSK',
       'hint.lab': 'Pick up a flask and tilt it with the rotation keys. Pour into a neighbour and the reagents react.',
 
       // Подписи, которые сцены рисуют прямо на холсте.
@@ -405,6 +412,10 @@
         ? table[key] : node.dataset.i18nTitleRu;
     });
 
+    // Язык документа сообщается средствам чтения с экрана и поисковым
+    // роботам. Клавиатуре он служит лишь подсказкой для словаря и не
+    // ограничивает набор: пользователь вправе писать квесты на любом
+    // языке независимо от языка интерфейса.
     document.documentElement.lang = current;
   }
 

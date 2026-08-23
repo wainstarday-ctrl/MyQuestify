@@ -76,6 +76,7 @@
     editingId: null,
     editPriority: 'normal',
     stats: [],
+    showDone: false,
     settings: {
       theme: 'dark',
       notifications_enabled: true,
@@ -787,12 +788,35 @@
     dom.tasksRoot.setAttribute('aria-busy', 'false');
 
     if (state.tasks.length) {
-      dom.tasksRoot.innerHTML = state.tasks.map(taskMarkup).join('');
-
-      var done = state.tasks.filter(function (task) {
+      var open = state.tasks.filter(function (task) {
+        return task.status !== 'completed';
+      });
+      var closed = state.tasks.filter(function (task) {
         return task.status === 'completed';
-      }).length;
-      dom.questCounter.textContent = done + ' / ' + state.tasks.length;
+      });
+
+      var markup = open.map(taskMarkup).join('');
+
+      // Завершённые убираются под сворачиваемый заголовок. Список растёт
+      // без предела, и закрытые дела вытесняют открытые за край экрана —
+      // на телефоне это происходит уже на пятом квесте. Держать их
+      // видимыми незачем: они не требуют действий, а история доступна на
+      // диаграмме по месяцам.
+      if (closed.length) {
+        markup += '<button class="tasks__fold" type="button" id="toggle-done"' +
+          ' aria-expanded="' + (state.showDone ? 'true' : 'false') + '">' +
+          '<span class="tasks__fold-arrow">' + (state.showDone ? '▾' : '▸') + '</span>' +
+          escapeHtml(t('tasks.completed', 'Завершённые')) + ' · ' + closed.length +
+          '</button>';
+
+        if (state.showDone) {
+          markup += '<div class="tasks__done">' +
+            closed.map(taskMarkup).join('') + '</div>';
+        }
+      }
+
+      dom.tasksRoot.innerHTML = markup;
+      dom.questCounter.textContent = closed.length + ' / ' + state.tasks.length;
     } else {
       dom.tasksRoot.innerHTML =
         '<p class="tasks__placeholder">' +
@@ -2038,7 +2062,12 @@
       if (edit) { openEditor(parseInt(edit.dataset.editTask, 10)); return; }
 
       var drop = event.target.closest('[data-drop-task]');
-      if (drop) { removeTask(parseInt(drop.dataset.dropTask, 10), drop); }
+      if (drop) { removeTask(parseInt(drop.dataset.dropTask, 10), drop); return; }
+
+      if (event.target.closest('#toggle-done')) {
+        state.showDone = !state.showDone;
+        renderTasks();
+      }
     });
 
     // ---- правая колонка: сцена или Оракул ----

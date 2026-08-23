@@ -274,6 +274,19 @@ SCENES: Final[dict] = {
         "description": {"ru": "Костёр в темноте: искры рождаются внизу и уходят вверх, закручиваясь вихрем за курсором. Подбрасывай поленья — пламя разгорается сильнее.", "en": "A fire in the dark: sparks are born below and drift up, swirling after the cursor. Toss in logs and the flame grows."},
         "price": 1500,
     },
+    "clouds": {
+        "title": {"ru": "Облака Вдохновения", "en": "Clouds of Inspiration"},
+        "tagline": {"ru": "Солнце в твоих руках", "en": "The sun in your hands"},
+        "description": {
+            "ru": "Облака плывут по небу и возвращаются с другого края. Нажми на "
+                  "облако — соберётся туча и пойдёт дождь, а от частых нажатий "
+                  "ударит молния. Перетащи солнце — сменится время суток.",
+            "en": "Clouds drift across the sky and return from the other side. Tap "
+                  "a cloud and it gathers into a storm; press repeatedly and "
+                  "lightning strikes. Drag the sun to change the time of day.",
+        },
+        "price": 1800,
+    },
     "lab": {
         "title": {"ru": "Лаборатория Идей", "en": "Laboratory of Ideas"},
         "tagline": {"ru": "Смешивай — получится третье", "en": "Mix two and get a third"},

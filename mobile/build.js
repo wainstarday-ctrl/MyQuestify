@@ -19,6 +19,15 @@ const path = require('path');
 const ROOT = path.join(__dirname, '..');
 const OUT = path.join(__dirname, 'www');
 
+/**
+ * Собирать ли выпуск с языковой моделью.
+ *
+ * Признаком служит переменная окружения, а не отдельный скрипт: обе
+ * разновидности собираются из одних исходников, и различие сводится к
+ * двум подключаемым файлам и наличию весов.
+ */
+const WITH_MODEL = process.env.MYQUESTIFY_WITH_MODEL === '1';
+
 /** Каталоги и файлы, переносимые без изменений. */
 const ASSETS = [
   ['static/css', 'static/css'],
@@ -66,11 +75,19 @@ function prepareHtml(html) {
 
   // Локальная реализация подключается перед прикладной логикой: к моменту
   // её запуска модуль должен быть определён.
-  out = out.replace(
-    '  <script src="/static/js/app.js"></script>',
-    '  <script src="/static/js/local-api.js"></script>\n' +
-    '  <script src="/static/js/app.js"></script>'
-  );
+  // Защитный слой подключается всегда, даже в сборке без модели: он
+  // проверяет и реплики пользователя, а не только ответы модели.
+  //
+  // Модуль выполнения модели добавляется лишь в выпуске с ней: в обычном
+  // он обратился бы к отсутствующим файлам и без нужды писал бы в консоль.
+  var scripts = '  <script src="/static/js/oracle-safety.js"></script>\n';
+  if (WITH_MODEL) {
+    scripts += '  <script src="/static/js/local-llm.js"></script>\n';
+  }
+  scripts += '  <script src="/static/js/local-api.js"></script>\n';
+  scripts += '  <script src="/static/js/app.js"></script>';
+
+  out = out.replace('  <script src="/static/js/app.js"></script>', scripts);
 
   // Мост Capacitor подключается первым: модуль уведомлений проверяет его
   // наличие при загрузке, чтобы выбрать способ доставки сообщений.
@@ -148,6 +165,17 @@ function main() {
     console.error('\n  ОШИБКА: static/js/vendor/matter.min.js отсутствует или пуст.');
     console.error('  Без него интерактивные сцены не запустятся.');
     process.exit(1);
+  }
+
+  if (WITH_MODEL) {
+    const model = path.join(OUT, 'static', 'models', 'model.gguf');
+    if (!fs.existsSync(model)) {
+      console.error('\n  ОШИБКА: сборка с моделью запрошена, но весов нет.');
+      console.error('  Ожидается: mobile/www/static/models/model.gguf');
+      process.exit(1);
+    }
+    const mb = (fs.statSync(model).size / (1024 * 1024)).toFixed(0);
+    console.log(`  веса модели: ${mb} МБ`);
   }
 
   const files = countFiles(OUT);
