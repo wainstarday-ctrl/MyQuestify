@@ -278,6 +278,10 @@
       'toast.keyKind': 'Use a letter, digit, arrow or space.',
       'toast.leadRange': 'The warning can be from 5 minutes to a day.',
       'toast.language': 'Interface language switched to English.',
+      'stepper.less': 'Less',
+      'stepper.more': 'More',
+      'error.request': 'Request failed',
+      'error.server': 'Server error (',
       'toast.notifyDenied': 'Notifications are blocked in the device settings.',
 
       // ---- экран загрузки ----

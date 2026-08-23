@@ -171,6 +171,7 @@
     dom.notifyLead = document.getElementById('notify-lead');
     dom.motionToggle = document.getElementById('motion-toggle');
     dom.hintsToggle = document.getElementById('hints-toggle');
+    dom.settingKeys = document.getElementById('setting-keys');
     dom.keyCcw = document.getElementById('key-ccw');
     dom.keyCw = document.getElementById('key-cw');
     dom.keyCcwValue = document.getElementById('key-ccw-value');
@@ -319,7 +320,7 @@
       if (window.LocalAPI && window.LocalAPI.ready) {
         return window.LocalAPI.handle(url, options).catch(function (error) {
           var failure = new Error(error.detail || error.message ||
-            'Ошибка обработки запроса');
+            t('error.request', 'Ошибка обработки запроса'));
           failure.status = error.status || 500;
           throw failure;
         });
@@ -347,7 +348,7 @@
             // Ошибки валидации Pydantic приходят массивом объектов.
             detail = detail.map(function (item) { return item.msg; }).join('; ');
           }
-          var failure = new Error(detail || ('Ошибка сервера (' + response.status + ')'));
+          var failure = new Error(detail || (t('error.server', 'Ошибка сервера (') + response.status + ')'));
           failure.status = response.status;
           throw failure;
         });
@@ -2457,6 +2458,13 @@
       window.Controls.stepper(dom.notifyLead);
       window.Controls.stepper(dom.editHours);
       dom.editPicker = window.Controls.dateTimePicker(dom.editDeadline);
+    }
+
+    // Настройка клавиш поворота скрывается на сенсорных устройствах:
+    // клавиатуры там нет, и вместо клавиш работают экранные кнопки в углу
+    // сцены. Оставленная на виду, она обещает возможность, которой нет.
+    if (dom.settingKeys && window.TouchControls && window.TouchControls.isNeeded()) {
+      dom.settingKeys.hidden = true;
     }
 
     if (window.MobileShell) {

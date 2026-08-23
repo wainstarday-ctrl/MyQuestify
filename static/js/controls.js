@@ -79,13 +79,13 @@
     var minus = document.createElement('button');
     minus.type = 'button';
     minus.className = 'stepper__btn';
-    minus.setAttribute('aria-label', 'Меньше');
+    minus.setAttribute('aria-label', t('stepper.less', 'Меньше'));
     minus.textContent = '−';
 
     var plus = document.createElement('button');
     plus.type = 'button';
     plus.className = 'stepper__btn';
-    plus.setAttribute('aria-label', 'Больше');
+    plus.setAttribute('aria-label', t('stepper.more', 'Больше'));
     plus.textContent = '+';
 
     input.parentNode.insertBefore(wrap, input);
