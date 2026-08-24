@@ -28,6 +28,17 @@ const OUT = path.join(__dirname, 'www');
  */
 const WITH_MODEL = process.env.MYQUESTIFY_WITH_MODEL === '1';
 
+/**
+ * Откуда взять веса для сборки с моделью.
+ *
+ * Путь передаётся извне, а сборщик копирует файл сам. Прежде веса
+ * требовалось положить в www заранее, но сборка очищает этот каталог
+ * целиком — приходилось уносить их во временное место и возвращать после,
+ * а проверка внутри сборки срабатывала в промежутке и обрывала её.
+ */
+const MODEL_SOURCE = process.env.MYQUESTIFY_MODEL_PATH ||
+  path.join(ROOT, 'models', 'model-mobile.gguf');
+
 /** Каталоги и файлы, переносимые без изменений. */
 const ASSETS = [
   ['static/css', 'static/css'],
@@ -168,13 +179,18 @@ function main() {
   }
 
   if (WITH_MODEL) {
-    const model = path.join(OUT, 'static', 'models', 'model.gguf');
-    if (!fs.existsSync(model)) {
+    if (!fs.existsSync(MODEL_SOURCE)) {
       console.error('\n  ОШИБКА: сборка с моделью запрошена, но весов нет.');
-      console.error('  Ожидается: mobile/www/static/models/model.gguf');
+      console.error(`  Ожидается: ${MODEL_SOURCE}`);
+      console.error('  Путь задаётся переменной MYQUESTIFY_MODEL_PATH.');
       process.exit(1);
     }
-    const mb = (fs.statSync(model).size / (1024 * 1024)).toFixed(0);
+
+    const target = path.join(OUT, 'static', 'models', 'model.gguf');
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.copyFileSync(MODEL_SOURCE, target);
+
+    const mb = (fs.statSync(target).size / (1024 * 1024)).toFixed(0);
     console.log(`  веса модели: ${mb} МБ`);
   }
 

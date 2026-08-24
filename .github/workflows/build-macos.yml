@@ -35,6 +35,26 @@ jobs:
       - name: Получить исходный код
         uses: actions/checkout@v4
 
+      - name: Определить версию
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Метка вида v1.9.0 задаётся при выпуске и служит источником
+          # истины. При ручном запуске метки нет, поэтому берётся значение
+          # из кода — так сборка для проверки остаётся возможной.
+          REF="${GITHUB_REF_NAME:-}"
+          if [[ "${GITHUB_REF:-}" == refs/tags/* ]]; then
+            VERSION="${REF#v}"
+            echo "Версия из метки: $VERSION"
+          else
+            VERSION=$(python -c "import sys; sys.path.insert(0, '.'); from app.config import APP_VERSION; print(APP_VERSION)")
+            echo "Метки нет, версия из кода: $VERSION"
+          fi
+
+          echo "value=$VERSION" >> "$GITHUB_OUTPUT"
+
       - name: Установить Python
         uses: actions/setup-python@v5
         with:
@@ -101,12 +121,6 @@ jobs:
         run: |
           chmod +x build_macos.sh
           ./build_macos.sh --skip-deps --dmg
-
-      - name: Определить версию
-        id: version
-        run: |
-          VERSION=$(python -c "import sys; sys.path.insert(0, '.'); from app.config import APP_VERSION; print(APP_VERSION)")
-          echo "value=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Переименовать образ диска
         run: |

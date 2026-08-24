@@ -35,6 +35,26 @@ jobs:
       - name: Получить исходный код
         uses: actions/checkout@v4
 
+      - name: Определить версию
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Метка вида v1.9.0 задаётся при выпуске и служит источником
+          # истины. При ручном запуске метки нет, поэтому берётся значение
+          # из кода — так сборка для проверки остаётся возможной.
+          REF="${GITHUB_REF_NAME:-}"
+          if [[ "${GITHUB_REF:-}" == refs/tags/* ]]; then
+            VERSION="${REF#v}"
+            echo "Версия из метки: $VERSION"
+          else
+            VERSION=$(python -c "import sys; sys.path.insert(0, '.'); from app.config import APP_VERSION; print(APP_VERSION)")
+            echo "Метки нет, версия из кода: $VERSION"
+          fi
+
+          echo "value=$VERSION" >> "$GITHUB_OUTPUT"
+
       - name: Проверить наличие физического движка
         run: |
           if [ ! -s static/js/vendor/matter.min.js ]; then
@@ -75,7 +95,7 @@ jobs:
       - name: Установить Java
         # Средства сборки Android требуют семнадцатую версию: более старые
         # не поддерживаются, более новые не проверены разработчиками Gradle.
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: 'temurin'
           java-version: '17'
@@ -134,12 +154,6 @@ jobs:
           chmod +x gradlew
           ./gradlew assembleDebug --no-daemon
 
-      - name: Определить версию
-        id: version
-        run: |
-          VERSION=$(python -c "import sys; sys.path.insert(0, '.'); from app.config import APP_VERSION; print(APP_VERSION)")
-          echo "value=$VERSION" >> "$GITHUB_OUTPUT"
-
       - name: Переименовать файл
         run: |
           mkdir -p release
@@ -181,15 +195,15 @@ jobs:
           MODEL_URL: https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/qwen2.5-0.5b-instruct-q4_k_m.gguf
         run: |
           set -euo pipefail
-          mkdir -p mobile/www/static/models
+          mkdir -p models
 
           curl --location --fail --show-error --silent \
                --retry 5 --retry-delay 10 --retry-all-errors \
                --connect-timeout 30 --max-time 900 \
-               --output mobile/www/static/models/model.gguf \
+               --output models/model-mobile.gguf \
                "$MODEL_URL"
 
-          SIZE_MB=$(( $(wc -c < mobile/www/static/models/model.gguf) / 1024 / 1024 ))
+          SIZE_MB=$(( $(wc -c < models/model-mobile.gguf) / 1024 / 1024 ))
           echo "Веса: ${SIZE_MB} МБ"
 
           if [ "$SIZE_MB" -lt 200 ]; then
@@ -197,7 +211,7 @@ jobs:
             exit 1
           fi
 
-          MAGIC=$(head -c 4 mobile/www/static/models/model.gguf | tr -d '\0')
+          MAGIC=$(head -c 4 models/model-mobile.gguf | tr -d '\0')
           if [ "$MAGIC" != "GGUF" ]; then
             echo "::error::Файл не является весами в формате GGUF."
             exit 1
@@ -211,14 +225,11 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Веса переносятся во временное место: пересборка веб-части
-          # очищает каталог www целиком.
-          mv mobile/www/static/models /tmp/models-backup
-
+          # Сборщик копирует веса сам: указывать их путь достаточно.
           cd mobile
-          MYQUESTIFY_WITH_MODEL=1 npm run build
-          mkdir -p www/static
-          mv /tmp/models-backup www/static/models
+          MYQUESTIFY_WITH_MODEL=1 \
+          MYQUESTIFY_MODEL_PATH="$(cd .. && pwd)/models/model-mobile.gguf" \
+            npm run build
 
           npx cap sync android
           cd android

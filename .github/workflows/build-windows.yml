@@ -28,6 +28,26 @@ jobs:
       - name: Забрать код
         uses: actions/checkout@v4
 
+      - name: Определить версию
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Метка вида v1.9.0 задаётся при выпуске и служит источником
+          # истины. При ручном запуске метки нет, поэтому берётся значение
+          # из кода — так сборка для проверки остаётся возможной.
+          REF="${GITHUB_REF_NAME:-}"
+          if [[ "${GITHUB_REF:-}" == refs/tags/* ]]; then
+            VERSION="${REF#v}"
+            echo "Версия из метки: $VERSION"
+          else
+            VERSION=$(python -c "import sys; sys.path.insert(0, '.'); from app.config import APP_VERSION; print(APP_VERSION)")
+            echo "Метки нет, версия из кода: $VERSION"
+          fi
+
+          echo "value=$VERSION" >> "$GITHUB_OUTPUT"
+
       - name: Поставить Python
         uses: actions/setup-python@v5
         with:
@@ -135,7 +155,7 @@ jobs:
           New-Item -ItemType Directory -Path dist/with-model/models -Force | Out-Null
           Copy-Item models/model.gguf dist/with-model/models/
 
-          $version = python -c "import sys; sys.path.insert(0, '.'); from app.config import APP_VERSION; print(APP_VERSION)"
+          $version = "${{ steps.version.outputs.value }}"
           $zip = "dist/MyQuestify-$version-windows-with-model.zip"
           Compress-Archive -Path dist/with-model/* -DestinationPath $zip -CompressionLevel Optimal
 
