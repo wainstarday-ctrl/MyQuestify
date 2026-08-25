@@ -47,54 +47,85 @@
    *
    * Дублирование осознанное: мобильная сборка не содержит Python, и
    * единственный способ иметь общий источник — генерировать этот файл при
-   * сборке. Для девяти записей, меняющихся редко, генератор дороже сверки.
+   * сборке. Для десяти записей, меняющихся редко, генератор дороже сверки.
+   *
+   * Расхождение этого списка с app/config.py — молчаливая неполадка: на
+   * телефоне сцена просто не появляется в перечне, и понять это можно лишь
+   * пересчитав вкладки на устройстве. Поэтому совпадение проверяется
+   * автоматически: tests/test_scene_catalog.py разбирает оба источника и
+   * сверяет ключи, порядок, цены и названия.
    */
   var SCENES = [
     { key: 'garden', price: 0,
-      title: { ru: 'Сад Вдумчивости', en: 'Garden of Reflection' },
-      tagline: { ru: 'Дерево растёт вместе с тобой', en: 'The tree grows along with you' },
+      title: { ru: 'Сад Вдумчивости',
+               en: 'Garden of Reflection' },
+      tagline: { ru: 'Дерево растёт вместе с тобой',
+                 en: 'The tree grows along with you' },
       description: { ru: 'Нажми на крону — посыплются плоды. Их можно ловить и бросать.',
                      en: 'Tap the crown and fruit will fall. You can catch and throw it.' } },
     { key: 'volcano', price: 300,
-      title: { ru: 'Жерло Решимости', en: 'Crater of Resolve' },
-      tagline: { ru: 'Держи нажатие — пойдёт лава', en: 'Hold the press and lava flows' },
+      title: { ru: 'Жерло Решимости',
+               en: 'Crater of Resolve' },
+      tagline: { ru: 'Держи нажатие — пойдёт лава',
+                 en: 'Hold the press and lava flows' },
       description: { ru: 'Долгое нажатие на кратер запускает поток лавы, который стекает по склону и остывает.',
                      en: 'A long press on the crater starts a lava flow that runs down the slope and cools.' } },
     { key: 'clockwork', price: 450,
-      title: { ru: 'Механизм Времени', en: 'Clockwork of Time' },
-      tagline: { ru: 'Малое колесо движет большое', en: 'A small wheel drives a large one' },
-      description: { ru: 'Сцепленные шестерни часовой башни. Крутани маленькую — большие пойдут тяжело и медленно.',
-                     en: 'Meshed gears of a clock tower. Spin the small one and the large ones turn slowly.' } },
+      title: { ru: 'Механизм Времени',
+               en: 'Clockwork of Time' },
+      tagline: { ru: 'Малое колесо движет большое',
+                 en: 'A small wheel drives a large one' },
+      description: { ru: 'Сцепленные шестерни часовой башни. Крутани маленькую — большие пойдут тяжело и медленно; раскрути большую — мелкие завертятся вихрем.',
+                     en: 'Meshed gears of a clock tower. Spin the small one and the large ones turn slowly; spin the large one and the small ones race.' } },
     { key: 'cosmos', price: 600,
-      title: { ru: 'Орбиты Замысла', en: 'Orbits of Intent' },
-      tagline: { ru: 'Планеты держат орбиту', en: 'Planets keep their orbits' },
+      title: { ru: 'Орбиты Замысла',
+               en: 'Orbits of Intent' },
+      tagline: { ru: 'Планеты держат орбиту',
+                 en: 'Planets keep their orbits' },
       description: { ru: 'Планеты можно перетаскивать и менять местами, но каждая возвращается на свою орбиту.',
                      en: 'Planets can be dragged and swapped, but each returns to its own orbit.' } },
     { key: 'pond', price: 750,
-      title: { ru: 'Пруд Безмолвия', en: 'Pond of Silence' },
-      tagline: { ru: 'Вода помнит каждое касание', en: 'Water remembers every touch' },
-      description: { ru: 'Кувшинки покачиваются на воде. Проведи по глади рукой — волны разойдутся кругами.',
-                     en: 'Lily pads drift on the surface. Sweep your hand across and ripples spread.' } },
+      title: { ru: 'Пруд Безмолвия',
+               en: 'Pond of Silence' },
+      tagline: { ru: 'Вода помнит каждое касание',
+                 en: 'Water remembers every touch' },
+      description: { ru: 'Кувшинки покачиваются на воде. Проведи по глади рукой — волны разойдутся кругами и оттолкнут листья к берегам.',
+                     en: 'Lily pads drift on the surface. Sweep your hand across the water and ripples push the leaves toward the banks.' } },
     { key: 'desk', price: 900,
-      title: { ru: 'Стол Черновиков', en: 'Desk of Drafts' },
-      tagline: { ru: 'Чем выше уровень, тем больше вещей', en: 'The higher the level, the more objects' },
+      title: { ru: 'Стол Черновиков',
+               en: 'Desk of Drafts' },
+      tagline: { ru: 'Чем выше уровень, тем больше вещей',
+                 en: 'The higher the level, the more objects' },
       description: { ru: 'На столе лежат предметы: их можно расшвыривать, ронять и складывать обратно.',
                      en: 'Objects lie on the desk: scatter them, drop them and pile them back up.' } },
     { key: 'weave', price: 1200,
-      title: { ru: 'Плетение Смыслов', en: 'Weave of Meanings' },
-      tagline: { ru: 'Потяни за нить — отзовётся вся сеть', en: 'Pull one thread and the whole net answers' },
-      description: { ru: 'Светящиеся узлы связаны упругими нитями и дрейфуют в невесомости.',
-                     en: 'Glowing nodes are linked by elastic threads and drift weightlessly.' } },
+      title: { ru: 'Плетение Смыслов',
+               en: 'Weave of Meanings' },
+      tagline: { ru: 'Потяни за нить — отзовётся вся сеть',
+                 en: 'Pull one thread and the whole net answers' },
+      description: { ru: 'Светящиеся узлы связаны упругими нитями и дрейфуют в невесомости. Потяни за один — сеть растянется, воспротивится и спружинит обратно в равновесие.',
+                     en: 'Glowing nodes are linked by elastic threads and drift weightlessly. Pull one and the net stretches, resists and springs back into balance.' } },
     { key: 'campfire', price: 1500,
-      title: { ru: 'Лагерь Уединения', en: 'Camp of Solitude' },
-      tagline: { ru: 'Искры летят вверх', en: 'Sparks rise upward' },
-      description: { ru: 'Костёр в темноте: искры рождаются внизу и уходят вверх. Подбрасывай поленья.',
-                     en: 'A fire in the dark: sparks rise from below. Toss in logs and the flame grows.' } },
+      title: { ru: 'Лагерь Уединения',
+               en: 'Camp of Solitude' },
+      tagline: { ru: 'Искры летят вверх',
+                 en: 'Sparks rise upward' },
+      description: { ru: 'Костёр в темноте: искры рождаются внизу и уходят вверх, закручиваясь вихрем за курсором. Подбрасывай поленья — пламя разгорается сильнее.',
+                     en: 'A fire in the dark: sparks are born below and drift up, swirling after the cursor. Toss in logs and the flame grows.' } },
+    { key: 'clouds', price: 1800,
+      title: { ru: 'Облака Вдохновения',
+               en: 'Clouds of Inspiration' },
+      tagline: { ru: 'Солнце в твоих руках',
+                 en: 'The sun in your hands' },
+      description: { ru: 'Облака плывут по небу и возвращаются с другого края. Нажми на облако — соберётся туча и пойдёт дождь, а от частых нажатий ударит молния. Перетащи солнце — сменится время суток.',
+                     en: 'Clouds drift across the sky and return from the other side. Tap a cloud and it gathers into a storm; press repeatedly and lightning strikes. Drag the sun to change the time of day.' } },
     { key: 'lab', price: 2000,
-      title: { ru: 'Лаборатория Идей', en: 'Laboratory of Ideas' },
-      tagline: { ru: 'Смешивай — получится третье', en: 'Mix two and get a third' },
-      description: { ru: 'Колбы с растворами. Наклони клавишами — жидкость польётся и смешается.',
-                     en: 'Flasks of reagents. Tilt with the rotation keys to pour and mix.' } }
+      title: { ru: 'Лаборатория Идей',
+               en: 'Laboratory of Ideas' },
+      tagline: { ru: 'Смешивай — получится третье',
+                 en: 'Mix two and get a third' },
+      description: { ru: 'Колбы с растворами на лабораторном столе. Возьми любую, наклони клавишами поворота — жидкость польётся. Попадёт в другую колбу — цвета смешаются.',
+                     en: 'Flasks of reagents on a lab bench. Pick one up, tilt it with the rotation keys and pour. Hit another flask and the reagents react.' } }
   ];
 
   /**
@@ -866,6 +897,25 @@
 
         try {
           var result = ROUTES[i][2](body, params, query);
+
+          // Читающие запросы состояние не меняют, и сохранять после них
+          // нечего. Прежде сохранение шло после любого запроса: открытие
+          // списка квестов, обновление сада, чтение настроек — каждое
+          // перекладывало в хранилище весь журнал целиком, со всеми
+          // квестами, мыслями и перепиской с оракулом. Одно действие
+          // пользователя вызывает пять-шесть чтений подряд, так что на
+          // каждое изменение приходилось шесть полных записей вместо одной.
+          //
+          // Именно поэтому на телефоне подтормаживало нажатие, а не
+          // отрисовка: браузер копировал всё состояние в отдельный поток
+          // хранилища, и чем длиннее журнал, тем дольше.
+          //
+          // Проверка по методу, а не по признаку изменения: все обработчики,
+          // меняющие состояние, объявлены как POST, PATCH или DELETE, и
+          // сверка этого — отдельная проверка в tools/check_local_api.js.
+          if (method === 'GET') {
+            return Promise.resolve(result);
+          }
 
           // Обработчик вправе вернуть обещание: генерация текста моделью
           // занимает секунды. Сохранение выполняется после его разрешения,

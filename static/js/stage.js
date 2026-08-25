@@ -34,6 +34,32 @@
   var MAX_STEP_MS = 32;
   var MIN_STEP_MS = 8;
 
+  /**
+   * Порядок профилей от тяжёлого к лёгкому. Понижение идёт по нему на шаг.
+   */
+  var PROFILE_ORDER = ['high', 'medium', 'low'];
+
+  /** Длина выборки, по которой судят о плавности. */
+  var SAMPLE_FRAMES = 90;
+
+  /** Шаг кадра, выше которого кадр считается пропущенным (около 38 в секунду). */
+  var SLOW_FRAME_MS = 26;
+
+  /** Доля медленных кадров в выборке, после которой профиль понижается. */
+  var SLOW_SHARE = 0.5;
+
+  /**
+   * Шаг кадра, выше которого замер отбрасывается.
+   *
+   * Полсекунды — это не медленная отрисовка, а остановка: сворачивание
+   * окна, разбор ответа сервера, уборка мусора. Учитывать такие кадры
+   * значило бы понижать профиль за то, к чему сцена непричастна.
+   */
+  var STALL_MS = 500;
+
+  /** Сколько кадров после построения сцены не измерять. */
+  var WARMUP_FRAMES = 45;
+
   /** Радиус «прощения» при попадании мимо тела, в пикселях сцены. */
   var GRAB_TOLERANCE = 26;
 
@@ -72,6 +98,15 @@
     // ограничивает частоту процессора сильнее, чем на настольной машине.
     if (memory && memory <= 2) { return 'low'; }
     if (cores && cores <= 4 && coarse) { return 'low'; }
+
+    // Старые сборки WebView сообщают о себе скупо: deviceMemory там может
+    // отсутствовать, а число ядер у недорогих телефонов доходит до восьми
+    // при слабом каждом. Поэтому сенсорное устройство без сведений о
+    // памяти начинает с низкого профиля, а не со среднего: подняться
+    // отсюда нельзя, зато первые секунды не идут рывками, и замер
+    // плавности успевает решить остальное.
+    if (coarse && !memory) { return 'low'; }
+
     if (memory && memory <= 4) { return 'medium'; }
     if (coarse) { return 'medium'; }
     if (cores && cores <= 2) { return 'medium'; }
@@ -103,7 +138,17 @@
     hintTimer: 0,
     sceneConfig: null,
     observer: null,
+    visibility: null,
     available: false,
+
+    // Замер плавности. Профиль, выбранный по числу ядер и объёму памяти,
+    // ошибается: телефон с восемью ядрами и четырьмя гигабайтами может
+    // быть и быстрым, и медленным вдвое. Числа, которые сообщает браузер,
+    // не различают их — а измеренная частота кадров различает.
+    slowFrames: 0,
+    sampleFrames: 0,
+    warmup: WARMUP_FRAMES,
+    autoProfile: true,
     drag: { constraint: null, body: null, pointerId: null },
     hintDismissed: false
   };
@@ -439,7 +484,17 @@
     var size = measure();
     S.width = size.width;
     S.height = size.height;
-    S.dpr = util.clamp(global.devicePixelRatio || 1, 1, 2.5);
+
+    // Предел плотности пикселей берётся из профиля. Прежде здесь стояло
+    // число 2.5 для всех устройств, а поле pixelRatio профиля не читалось
+    // нигде: слабый телефон честно получал вчетверо меньше частиц и всё
+    // равно закрашивал холст в два с половиной раза большего разрешения.
+    // Заливка неба, затемнение по краям и свечение считаются по пикселям,
+    // поэтому именно это, а не число частиц, определяет плавность.
+    //
+    // Разница на телефоне с плотностью 3: при пределе 1 закрашивается
+    // впятеро меньше точек, чем при 2.5.
+    S.dpr = util.clamp(global.devicePixelRatio || 1, 1, S.quality.pixelRatio);
 
     S.canvas.width = Math.round(S.width * S.dpr);
     S.canvas.height = Math.round(S.height * S.dpr);
@@ -680,12 +735,72 @@
     }
   }
 
+  /**
+   * Применяет профиль отрисовки к холсту, движку и сцене.
+   *
+   * @param {string} key ключ профиля
+   */
+  function applyProfile(key) {
+    S.profile = key;
+    S.quality = PROFILES[key];
+
+    // Точность физики — тоже расход. Значения по умолчанию у движка ниже
+    // выставленных здесь; на слабом устройстве лишние проходы решателя
+    // отнимают время у отрисовки, а разницу в поведении тел заметить
+    // невозможно: тела в сценах крупные и медленные.
+    if (S.engine) {
+      S.engine.positionIterations = key === 'low' ? 4 : (key === 'medium' ? 6 : 8);
+      S.engine.velocityIterations = key === 'low' ? 3 : (key === 'medium' ? 4 : 6);
+    }
+
+    applySize();
+    if (S.scene && typeof S.scene.resize === 'function') {
+      S.scene.resize(S.width, S.height);
+    }
+  }
+
+  /**
+   * Понижает профиль на ступень, если сцена не успевает.
+   *
+   * Понижение одностороннее: обратный переход при первой же спокойной
+   * выборке заставил бы профиль колебаться между двумя ступенями, а каждая
+   * смена перестраивает сцену — мигание было бы заметнее самих пропусков.
+   */
+  function considerDowngrade(delta) {
+    if (!S.autoProfile) { return; }
+    if (S.warmup > 0) { S.warmup -= 1; return; }
+    if (PROFILE_ORDER.indexOf(S.profile) >= PROFILE_ORDER.length - 1) { return; }
+    if (delta > STALL_MS) { return; }
+
+    S.sampleFrames += 1;
+    if (delta > SLOW_FRAME_MS) { S.slowFrames += 1; }
+    if (S.sampleFrames < SAMPLE_FRAMES) { return; }
+
+    var share = S.slowFrames / S.sampleFrames;
+    S.sampleFrames = 0;
+    S.slowFrames = 0;
+
+    if (share < SLOW_SHARE) { return; }
+
+    var next = PROFILE_ORDER[PROFILE_ORDER.indexOf(S.profile) + 1];
+    if (global.console && global.console.info) {
+      global.console.info(
+        'MyQuestify: медленных кадров ' + Math.round(share * 100) + '%,' +
+        ' профиль понижен «' + S.profile + '» → «' + next + '»'
+      );
+    }
+    applyProfile(next);
+    S.warmup = WARMUP_FRAMES;
+  }
+
   function frame(timestamp) {
     if (!S.running) { return; }
 
     var delta = S.lastTime ? timestamp - S.lastTime : 16.7;
     S.lastTime = timestamp;
     var step = util.clamp(delta, MIN_STEP_MS, MAX_STEP_MS);
+
+    if (S.lastTime) { considerDowngrade(delta); }
 
     if (S.scene) {
       // Необработанное исключение внутри кадра останавливает
@@ -835,12 +950,13 @@
       logProfile();
 
       S.ctx = S.canvas.getContext('2d');
-      applySize();
 
       S.engine = global.Matter.Engine.create();
       S.engine.gravity.y = 1;
-      S.engine.positionIterations = 8;
-      S.engine.velocityIterations = 6;
+
+      // Профиль применяется целиком, а не по частям: он задаёт и плотность
+      // пикселей, и точность решателя.
+      applyProfile(S.profile);
 
       bindPointer();
       bindKeyboard();
@@ -862,6 +978,42 @@
         S.observer.observe(S.host);
       } else {
         global.addEventListener('resize', onResize);
+      }
+
+      // Отрисовка останавливается, пока сцену не видно.
+      //
+      // На телефоне сцена лежит ниже списка квестов, а в узкой раскладке
+      // и вовсе скрыта переключателем видов. Прежде цикл кадров шёл всё
+      // это время: холст закрашивался шестьдесят раз в секунду в никуда.
+      // Это не только грело телефон впустую — отрисовка отнимала время у
+      // прокрутки списка, из-за чего и она шла рывками.
+      if (typeof global.IntersectionObserver === 'function') {
+        S.visibility = new global.IntersectionObserver(function (entries) {
+          var visible = entries.some(function (entry) { return entry.isIntersecting; });
+          if (visible) {
+            // Разогрев назначается заново: первый кадр после простоя
+            // всегда долгий, и понижать из-за него профиль незачем.
+            S.warmup = WARMUP_FRAMES;
+            start();
+          } else {
+            stop();
+          }
+        }, { threshold: 0.01 });
+        S.visibility.observe(S.host);
+      }
+
+      // Свёрнутое приложение: requestAnimationFrame замирает сам не везде,
+      // а в оболочке Android страница остаётся «видимой» дольше, чем окно
+      // на экране.
+      if (global.document && global.document.addEventListener) {
+        global.document.addEventListener('visibilitychange', function () {
+          if (global.document.hidden) {
+            stop();
+          } else if (S.available) {
+            S.warmup = WARMUP_FRAMES;
+            start();
+          }
+        });
       }
 
       S.available = true;
@@ -902,6 +1054,13 @@
         }
 
         S.scene.build(S.width, S.height);
+
+        // Первые кадры новой сцены медленны сами по себе: строятся тела,
+        // прогревается код. Измерять их — значит понижать профиль за то,
+        // что случается один раз.
+        S.warmup = WARMUP_FRAMES;
+        S.sampleFrames = 0;
+        S.slowFrames = 0;
         // Подсказка появляется заново при каждой смене сцены: правила у
         // каждой свои, и один раз прочитанное к новой сцене не относится.
         armHint();
@@ -1074,11 +1233,32 @@
       return S.available;
     },
 
+    /**
+     * Сведения о текущем состоянии отрисовки.
+     *
+     * Нужны снаружи для двух вещей: разбора жалоб на плавность (какой
+     * профиль выбран на этом устройстве) и проверки ядра стендом, где
+     * браузера нет и посмотреть на холст нечем.
+     *
+     * @returns {{profile: string, dpr: number, running: boolean,
+     *            density: number, glow: boolean}}
+     */
+    status: function () {
+      return {
+        profile: S.profile,
+        dpr: S.dpr,
+        running: S.running,
+        density: S.quality.particles,
+        glow: S.quality.glow
+      };
+    },
+
     /** Останавливает цикл и освобождает ресурсы. */
     destroy: function () {
       stop();
       teardownScene();
       if (S.observer) { S.observer.disconnect(); }
+      if (S.visibility) { S.visibility.disconnect(); }
       if (S.engine) { global.Matter.Engine.clear(S.engine); }
       S.available = false;
     }

@@ -59,3 +59,8 @@ mobile/android-icons/
 mobile/android/app/*.keystore
 mobile/android/keystore.properties
 release/
+
+# Пустой файл, оставшийся от неудачной загрузки готовой сборки пакета
+# инференса: 575 КБ нулей. Попал в репозиторий в версии 2.0.0.
+llama_cpp_python.whl
+*.whl

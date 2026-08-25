@@ -62,6 +62,12 @@
     var flash = 0;
     var shake = 0;
 
+    /** Доля частиц, разрешённая профилем отрисовки. Задаётся в build. */
+    var density = env.density || 1;
+
+    /** Предел одновременно падающих капель. Задаётся в build. */
+    var dropLimit = 320;
+
     /**
      * Возвращает состояние неба для текущего положения солнца.
      *
@@ -121,7 +127,13 @@
         puffs.push({
           dx: (position - 0.5) * 120 * scale,
           dy: -bulge * 16 * scale + u.rand(-4, 4),
-          r: (16 + bulge * 22) * scale * u.rand(0.85, 1.15)
+          r: (16 + bulge * 22) * scale * u.rand(0.85, 1.15),
+
+          // Хранимый градиент заливки и ступень оттенка, для которой он
+          // построен. Отрицательное значение не совпадает ни с одной
+          // ступенью, поэтому первый кадр строит градиент заново.
+          gradient: null,
+          tint: -1
         });
       }
 
@@ -141,8 +153,11 @@
     }
 
     function build(width, height) {
+      density = env.density || 1;
+      dropLimit = Math.max(80, Math.round(320 * density));
+
       var count = u.clamp(4 + Math.round(u.clamp(level, 1, 10) / 2), 4, 9);
-      count = Math.max(3, Math.round(count * (env.density || 1)));
+      count = Math.max(3, Math.round(count * density));
 
       clouds = [];
       for (var i = 0; i < count; i += 1) {
@@ -152,8 +167,13 @@
       drops = [];
       bolts = [];
 
+      // Плотность звёзд и предел одновременных капель следуют профилю
+      // отрисовки. Прежде и то, и другое было задано числом: на слабом
+      // устройстве профиль понижал количество облаков, а сотня звёзд и
+      // три сотни капель оставались, и выигрыш съедался ими.
       stars = [];
-      for (var s = 0; s < Math.round(width / 9); s += 1) {
+      var starCount = Math.max(24, Math.round((width / 9) * density));
+      for (var s = 0; s < starCount; s += 1) {
         stars.push({
           x: u.rand(0, width),
           y: u.rand(0, height * 0.7),
@@ -178,7 +198,7 @@
 
     /** Роняет каплю из облака. */
     function rain(cloud) {
-      if (drops.length > 320) { return; }
+      if (drops.length > dropLimit) { return; }
       drops.push({
         x: cloud.x + u.rand(-60, 60) * cloud.scale,
         y: cloud.y + 12 * cloud.scale,
@@ -283,7 +303,6 @@
           if (bird.x > width + 30) { bird.x = -30; }
         });
 
-        stars.forEach(function (star) { star.phase = star.twinkle; });
       },
 
       render: function (ctx, width, height) {
@@ -316,13 +335,20 @@
         // Звёзды проступают по мере темноты — и ночью, и в грозу.
         var starAlpha = u.clamp(1 - daylight * 1.6, 0, 1);
         if (starAlpha > 0.02) {
+          // Цвет задаётся один раз, а мерцание — числовой прозрачностью.
+          // Прежде на каждую звезду каждый кадр собиралась строка вида
+          // «rgba(...)» с округлением: сотня строк за кадр, шесть тысяч в
+          // секунду, и все немедленно выбрасывались.
+          ctx.fillStyle = 'rgb(240, 244, 255)';
+          var baseAlpha = ctx.globalAlpha;
           stars.forEach(function (star) {
             var twinkle = 0.6 + 0.4 * Math.sin(now * star.twinkle + star.x);
+            ctx.globalAlpha = baseAlpha * starAlpha * twinkle * 0.9;
             ctx.beginPath();
             ctx.arc(star.x, star.y, star.r, 0, TAU);
-            ctx.fillStyle = 'rgba(240, 244, 255, ' + (starAlpha * twinkle * 0.9).toFixed(3) + ')';
             ctx.fill();
           });
+          ctx.globalAlpha = baseAlpha;
         }
 
         // Солнце. Ореол рисуется в режиме сложения, поэтому свет ложится
@@ -369,35 +395,57 @@
 
         // Дождь под облаками, но над ними самими: капля, нарисованная
         // поверх тучи, выглядит падающей сквозь неё.
-        ctx.strokeStyle = 'rgba(184, 214, 240, 0.55)';
-        ctx.lineWidth = 1.4;
-        ctx.lineCap = 'round';
-        drops.forEach(function (drop) {
+        // Все капли собираются в один контур и обводятся разом. Отдельная
+        // обводка на каплю означала бы до трёхсот вызовов за кадр при
+        // одинаковых цвете и толщине — а именно они и стоят дорого.
+        if (drops.length) {
+          ctx.strokeStyle = 'rgba(184, 214, 240, 0.55)';
+          ctx.lineWidth = 1.4;
+          ctx.lineCap = 'round';
           ctx.beginPath();
-          ctx.moveTo(drop.x, drop.y);
-          ctx.lineTo(drop.x - 1, drop.y + drop.len);
+          drops.forEach(function (drop) {
+            ctx.moveTo(drop.x, drop.y);
+            ctx.lineTo(drop.x - 1, drop.y + drop.len);
+          });
           ctx.stroke();
-        });
+        }
 
         // Облака.
         clouds.forEach(function (cloud) {
           var tone = u.mix([255, 255, 255], [92, 96, 112], cloud.storm);
           var shade = u.mix([206, 214, 230], [58, 60, 74], cloud.storm);
 
+          // Оттенок тучи меняется плавно, но незаметно для глаза мелкими
+          // долями. Достаточно двадцати ступеней: градиент пересобирается
+          // при переходе на новую, а не каждый кадр. Прежде на девять
+          // облаков приходилось до полусотни новых градиентов за кадр —
+          // три тысячи в секунду, и это самая дорогая операция холста.
+          var step = Math.round(cloud.storm * 20);
+
           cloud.puffs.forEach(function (puff) {
             var px = cloud.x + puff.dx;
             var py = cloud.y + puff.dy;
 
-            // Нижняя половина темнее: свет падает сверху, и однотонное
-            // облако выглядит вырезанным из бумаги.
-            var body = ctx.createLinearGradient(px, py - puff.r, px, py + puff.r);
-            body.addColorStop(0, u.rgba(tone, 0.97));
-            body.addColorStop(1, u.rgba(shade, 0.95));
+            if (puff.tint !== step) {
+              // Градиент строится вокруг начала координат, а не вокруг
+              // положения клуба: тогда он не зависит от того, где облако
+              // окажется в следующем кадре, и переживает его движение.
+              // Нижняя половина темнее: свет падает сверху, и однотонное
+              // облако выглядит вырезанным из бумаги.
+              var body = ctx.createLinearGradient(0, -puff.r, 0, puff.r);
+              body.addColorStop(0, u.rgba(tone, 0.97));
+              body.addColorStop(1, u.rgba(shade, 0.95));
+              puff.gradient = body;
+              puff.tint = step;
+            }
 
+            ctx.save();
+            ctx.translate(px, py);
             ctx.beginPath();
-            ctx.arc(px, py, puff.r, 0, TAU);
-            ctx.fillStyle = body;
+            ctx.arc(0, 0, puff.r, 0, TAU);
+            ctx.fillStyle = puff.gradient;
             ctx.fill();
+            ctx.restore();
           });
 
           if (cloud.storm > 0.25) {

@@ -86,7 +86,12 @@ if [[ $SKIP_DEPS -eq 0 ]]; then
         # Отдельная установка: неудача не должна отменять всё остальное.
         # На процессорах Apple готовые сборки собираются с поддержкой Metal,
         # но работают и без графического ускорителя.
-        if pip install llama-cpp-python --only-binary=:all: --quiet; then
+        # На PyPI лежат только исходные тексты, поэтому --only-binary
+        # отвергал установку всегда. Готовые сборки берутся с указателя
+        # автора: для Apple Silicon — с поддержкой Metal.
+        if pip install llama-cpp-python --prefer-binary --quiet \
+             --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/metal \
+           && python -c 'import llama_cpp' 2>/dev/null; then
             ok 'llama-cpp-python установлен'
         else
             warn 'llama-cpp-python установить не удалось.'

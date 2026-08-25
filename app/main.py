@@ -319,6 +319,38 @@ async def _recalculate_tree_level(session: AsyncSession, garden: Garden) -> int:
     return garden.tree_level
 
 
+async def _commit_if_changed(session: AsyncSession) -> bool:
+    """Сохраняет изменения, если они есть.
+
+    Читающие обработчики всё же вынуждены завершать сделку: ``_get_garden`` и
+    ``_get_settings`` создают недостающую строку при первом обращении, и без
+    сохранения она пропадала бы. Но создаётся она однажды, а обработчик
+    вызывается при каждом обновлении интерфейса — открытие списка квестов,
+    чтение сада, чтение настроек идут подряд, и каждое завершало сделку
+    впустую.
+
+    Пустое завершение не бесплатно: SQLite записывает отметку в журнал и
+    сбрасывает её на диск. Режим WAL делает это дешевле, но не даром, а на
+    настольном приложении обращения к диску складываются с тем, что делает
+    в это же время оболочка окна.
+
+    Проверка идёт по составу сделки, а не по методу запроса: обработчик
+    может создать строку и при чтении, и решать это должен он сам, а не
+    правило, записанное где-то ещё.
+
+    Args:
+        session: текущая сделка с базой.
+
+    Returns:
+        bool: было ли что сохранять.
+    """
+    if not (session.new or session.dirty or session.deleted):
+        return False
+
+    await session.commit()
+    return True
+
+
 async def _get_garden(session: AsyncSession, user_id: int = DEFAULT_USER_ID) -> Garden:
     """Возвращает сад пользователя, создавая запись при её отсутствии."""
     garden = await session.get(Garden, user_id)
@@ -543,7 +575,7 @@ async def read_garden(session: AsyncSession = Depends(get_session)) -> GardenRea
     """Возвращает фон, уровень дерева и текущий баланс токенов."""
     user = await get_default_user(session)
     garden = await _get_garden(session)
-    await session.commit()
+    await _commit_if_changed(session)
 
     return GardenRead(
         user_id=garden.user_id,
@@ -569,7 +601,7 @@ async def read_garden(session: AsyncSession = Depends(get_session)) -> GardenRea
 async def read_shop(session: AsyncSession = Depends(get_session)) -> List[SceneRead]:
     """Возвращает каталог сцен с отметками о покупке и активности."""
     garden = await _get_garden(session)
-    await session.commit()
+    await _commit_if_changed(session)
     return await _scene_catalog(session, garden.active_scene or DEFAULT_SCENE)
 
 
@@ -1053,7 +1085,7 @@ async def _get_settings(session: AsyncSession) -> Settings:
 async def read_settings(session: AsyncSession = Depends(get_session)) -> SettingsRead:
     """Возвращает текущие настройки."""
     settings = await _get_settings(session)
-    await session.commit()
+    await _commit_if_changed(session)
     return SettingsRead.model_validate(settings)
 
 
