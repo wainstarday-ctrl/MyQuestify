@@ -91,11 +91,8 @@ jobs:
 
           python -m pytest tests/ -q
 
-
       - name: Сверить защитные слои двух версий
-
         run: python tools/check_safety_parity.py
-
 
       - name: Проверить запуск интерфейса
         # Ошибки времени выполнения синтаксическая проверка не находит, а
@@ -160,9 +157,38 @@ jobs:
           }
 
       - name: Собрать приложение
+        env:
+          # То же требование, что на Windows: спецификация обрывает работу,
+          # если движок не установлен. На macOS это уже случалось — выпуск
+          # 2.0.0 ушёл с весами и без движка, потому что установка падала
+          # тихо.
+          MYQUESTIFY_REQUIRE_LLM: '1'
         run: |
           chmod +x build_macos.sh
           ./build_macos.sh --skip-deps --dmg
+
+      - name: Проверить, что движок попал в сборку
+        # Проверка по списку состава, а не по файлам: приложение собирается
+        # в один файл, и нативные библиотеки лежат внутри него.
+        run: |
+          set -euo pipefail
+
+          toc=$(find build -name 'Analysis-*.toc' | head -1)
+          if [[ -z "$toc" ]]; then
+            echo "::error::Не найден список состава сборки (Analysis-*.toc)."
+            exit 1
+          fi
+
+          grep -q "llama_cpp" "$toc" || {
+            echo "::error::В составе сборки нет модуля llama_cpp."
+            exit 1
+          }
+          grep -qE "llama[^']*\.(dylib|so)" "$toc" || {
+            echo "::error::В составе сборки нет нативных библиотек llama.cpp."
+            exit 1
+          }
+
+          echo "Движок в составе сборки: упоминаний $(grep -c llama "$toc")"
 
       - name: Переименовать образ диска
         run: |

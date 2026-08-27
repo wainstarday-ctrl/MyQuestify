@@ -64,26 +64,14 @@ jobs:
           Write-Host 'matter.min.js на месте'
 
       - name: Установить Node.js
-
         uses: actions/setup-node@v4
-
         with:
-
           node-version: '20'
 
-
       - name: Проверить правила и защитный фильтр
-
-
         # Расчёт награды, штрафа, уровня сцены и работа фильтра
-
-
         # безопасности от платформы не зависят, но ошибка в них попала бы
-
-
         # сразу во все выпуски.
-
-
         run: |
           # Проверки затрагивают и маршруты сервера, поэтому нужны основные
           # библиотеки. Перечислены поимённо, а не через requirements.txt:
@@ -93,23 +81,13 @@ jobs:
 
           python -m pytest tests/ -q
 
-
-
       - name: Сверить защитные слои двух версий
-
-
         run: python tools/check_safety_parity.py
 
-
-
       - name: Проверить запуск интерфейса
-
         # Ошибки времени выполнения синтаксическая проверка не находит, а
-
         # приводят они к самому неприятному отказу: приложение открывается
-
         # и остаётся на экране загрузки навсегда, ничего не сообщая.
-
         run: node tools/smoke_test.js
 
       - name: Измерить нагрузку сцен на холст
@@ -128,7 +106,6 @@ jobs:
         run: |
           node tools/check_stage_profile.js
           node tools/check_local_api.js
-
 
       - name: Установить зависимости
         run: |
@@ -173,19 +150,44 @@ jobs:
           }
 
       - name: Собрать .exe
+        env:
+          # Объявляет сборку требующей движка: спецификация оборвёт работу,
+          # если llama-cpp-python не установлен, вместо того чтобы молча
+          # собрать выпуск, который не сможет воспользоваться весами.
+          MYQUESTIFY_REQUIRE_LLM: '1'
         run: pyinstaller MyQuestify.spec --noconfirm --clean
 
       - name: Проверить, что движок попал в сборку
-        # Спецификация вкладывает llama_cpp только при его наличии и молча
-        # обходится без него. Отдельная проверка превращает молчание в отказ.
+        # Проверка по спискам сборки, а не по файлам на диске: приложение
+        # собирается в один файл, и все нативные библиотеки лежат внутри
+        # него — искать «llama*.dll» в каталоге build бессмысленно, там
+        # только промежуточные списки. Прежняя редакция этого шага искала
+        # именно файлы и роняла сборку, которая на деле прошла верно.
+        #
+        # Analysis-00.toc перечисляет всё, что вошло в архив, включая
+        # нативные библиотеки. Проверка обеих записей — и модуля Python, и
+        # библиотеки llama.cpp — потому что одна без другой бесполезна.
         shell: pwsh
         run: |
-          $found = Get-ChildItem -Path build -Recurse -Filter 'llama*.dll' -ErrorAction SilentlyContinue
-          if (-not $found) {
-            Write-Error 'В сборке нет библиотек llama.cpp.'
+          $toc = Get-ChildItem -Path build -Recurse -Filter 'Analysis-*.toc' `
+            -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $toc) {
+            Write-Error 'Не найден список состава сборки (Analysis-*.toc).'
             exit 1
           }
-          Write-Host "Библиотеки движка на месте: $($found.Count)"
+
+          $content = Get-Content -Raw -LiteralPath $toc.FullName
+          if ($content -notmatch 'llama_cpp') {
+            Write-Error 'В составе сборки нет модуля llama_cpp.'
+            exit 1
+          }
+          if ($content -notmatch 'llama[^'']*\.dll') {
+            Write-Error 'В составе сборки нет нативных библиотек llama.cpp.'
+            exit 1
+          }
+
+          $hits = ([regex]::Matches($content, 'llama')).Count
+          Write-Host "Движок в составе сборки: упоминаний $hits"
 
       - name: Проверить результат
         shell: pwsh
@@ -194,6 +196,13 @@ jobs:
           if (-not (Test-Path $exe)) { Write-Error "Файл не собран: $exe"; exit 1 }
           $size = [math]::Round((Get-Item $exe).Length / 1MB, 1)
           Write-Host "Собрано: $exe ($size МБ)"
+
+          # Копия с номером версии в имени. Остальные пять файлов выпуска
+          # версию в имени несут, и только этот назывался просто
+          # MyQuestify.exe: скачав его, определить версию можно было лишь
+          # запустив приложение.
+          $version = "${{ steps.version.outputs.value }}"
+          Copy-Item $exe "dist/MyQuestify-$version-windows.exe"
 
       - name: Загрузить веса модели
         uses: ./.github/actions/fetch-model
@@ -244,7 +253,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            dist/MyQuestify.exe
+            dist/MyQuestify-*-windows.exe
             dist/*-with-model.zip
           fail_on_unmatched_files: true
           name: MyQuestify ${{ github.ref_name }}
@@ -253,16 +262,18 @@ jobs:
 
             | Файл | Платформа | Модель |
             |---|---|---|
-            | `MyQuestify.exe` | Windows 10 и 11 | подключается отдельно |
-            | `MyQuestify-*-windows-with-model.zip` | Windows 10 и 11 | входит в состав |
-            | `MyQuestify-*-macos.dmg` | macOS | подключается отдельно |
-            | `MyQuestify-*-macos-with-model.dmg` | macOS | входит в состав |
-            | `MyQuestify-*-android.apk` | Android 6 и выше | не поддерживается |
+            | `MyQuestify-<версия>-windows.exe` | Windows 10 и 11 | подключается отдельно |
+            | `MyQuestify-<версия>-windows-with-model.zip` | Windows 10 и 11 | входит в состав |
+            | `MyQuestify-<версия>-macos.dmg` | macOS | подключается отдельно |
+            | `MyQuestify-<версия>-macos-with-model.dmg` | macOS | входит в состав |
+            | `MyQuestify-<версия>-android.apk` | Android 6 и выше | подключается отдельно |
+            | `MyQuestify-<версия>-android-with-model.apk` | Android 6 и выше | входит в состав |
 
             Установка не требуется: распакуйте и запустите.
 
-            Выпуски с моделью весят около 1.1 ГБ и работают сразу после
-            распаковки. Лёгкие загружаются быстрее, а модель к ним
+            Выпуски с моделью работают сразу после распаковки и весят
+            заметно больше — от 450 МБ на Android до примерно гигабайта на
+            настольных системах. Лёгкие загружаются быстрее, модель к ним
             подключается позже.
 
             **Windows.** Нужен компонент Microsoft Edge WebView2. На
@@ -280,16 +291,17 @@ jobs:
 
             ## Языковая модель
 
-            В выпуск не входит. Без неё приложение работает полностью, а
-            вместо генерации показывает заготовленные фразы.
+            Без модели приложение работает полностью: вместо генерации оно
+            показывает заготовленные фразы и сообщает об этом в заголовке.
 
-            Настольные версии: положите файл GGUF как `model.gguf` в каталог
-            данных приложения — подробности в
+            Настольные версии используют модель на полтора миллиарда
+            параметров, версия для Android — на полмиллиарда: телефону
+            больше не выделить. Разница в размере модели, не в
+            возможностях приложения.
+
+            Чтобы подключить модель к лёгкому выпуску, положите файл GGUF
+            как `model.gguf` в каталог данных приложения — подробности в
             [docs/MODEL.md](https://github.com/${{ github.repository }}/blob/main/docs/MODEL.md).
-
-            Версия для Android работает без модели: полтора миллиарда
-            параметров занимают около гигабайта, и телефон столько ни
-            одному приложению не выделит.
 
             ## Данные
 
