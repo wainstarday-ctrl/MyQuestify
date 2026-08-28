@@ -127,6 +127,23 @@ function load() {
 
   return api.init().then(settle).then(() => ({
     counters: storage.counters,
+
+    /**
+     * Подставляет модуль выполнения модели с заданным состоянием.
+     *
+     * @param {string|null} state состояние или null, чтобы убрать модуль
+     */
+    setLLM(state) {
+      if (state === null) {
+        delete sandbox.window.LocalLLM;
+        return;
+      }
+      sandbox.window.LocalLLM = {
+        status: () => state,
+        reason: () => (state === 'failed' ? 'проверочная причина' : '')
+      };
+    },
+
     request: (method, url, body) =>
       api.handle(url, { method, body: body ? JSON.stringify(body) : undefined })
         .then((value) => settle().then(() => value)),
@@ -186,6 +203,36 @@ async function main() {
       await api.request(method, url, body);
       expect(method + ' ' + url, api.counters.writes - before, 1);
     }
+  }
+
+  console.log('\n  Состояние модели берётся у модуля выполнения');
+  {
+    // Выпуск с моделью подключает модуль local-llm.js, выпуск без неё —
+    // нет. Маршрут состояния обязан отражать это, а не отвечать заранее
+    // известным значением: именно так в 2.0.0 приложение с загруженной
+    // моделью сообщало в шапке «модель не найдена».
+    const cases = [
+      { title: 'модуля нет (выпуск без модели)', llm: null,
+        expectAvailable: false, expectStatus: 'absent' },
+      { title: 'модуль загружает веса', llm: 'loading',
+        expectAvailable: false, expectStatus: 'loading' },
+      { title: 'модель готова', llm: 'ready',
+        expectAvailable: true, expectStatus: 'ready' },
+      { title: 'загрузка не удалась', llm: 'failed',
+        expectAvailable: false, expectStatus: 'failed' }
+    ];
+
+    for (const item of cases) {
+      api.setLLM(item.llm);
+      const health = await api.request('GET', '/api/health');
+      const ok = health.llm_available === item.expectAvailable
+        && health.llm_status === item.expectStatus;
+      if (!ok) { failures += 1; }
+      console.log('    %s %s → llm_available=%s, llm_status=%s',
+        ok ? '✓' : '✗', item.title, health.llm_available, health.llm_status);
+    }
+
+    api.setLLM(null);
   }
 
   console.log('\n  Записанное переживает перезагрузку');

@@ -1988,15 +1988,42 @@
       dom.engineText.textContent = t(key, ru);
     }
 
-    api.health().then(function (info) {
+    // Загрузка весов на телефоне занимает секунды, поэтому одного опроса
+    // при запуске недостаточно: он застал бы модель в состоянии загрузки
+    // и навсегда оставил бы в шапке «модель не найдена». Опрос
+    // повторяется, пока состояние не станет окончательным.
+    //
+    // Настольной версии это не касается: там модель загружает сервер до
+    // ответа на первый запрос, и промежуточного состояния не бывает —
+    // поле llm_status в ответе отсутствует, и повтор не назначается.
+    var RECHECK_DELAY_MS = 1500;
+    var RECHECK_LIMIT = 120;          // около трёх минут
+    var rechecks = 0;
+
+    function apply(info) {
       if (info.llm_available) {
         setState('online', 'engine.online', 'локальная модель активна');
-      } else {
-        setState('fallback', 'engine.fallback', 'модель не найдена · резервные фразы');
+        return;
       }
-    }).catch(function () {
-      setState('offline', 'engine.offline', 'бэкенд недоступен');
-    });
+
+      var pending = info.llm_status === 'loading' || info.llm_status === 'idle';
+      if (pending && rechecks < RECHECK_LIMIT) {
+        setState('loading', 'engine.loading', 'модель загружается…');
+        rechecks += 1;
+        window.setTimeout(check, RECHECK_DELAY_MS);
+        return;
+      }
+
+      setState('fallback', 'engine.fallback', 'модель не найдена · резервные фразы');
+    }
+
+    function check() {
+      api.health().then(apply).catch(function () {
+        setState('offline', 'engine.offline', 'бэкенд недоступен');
+      });
+    }
+
+    check();
   }
 
   // -------------------------------------------------------------------- старт

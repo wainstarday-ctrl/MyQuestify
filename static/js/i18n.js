@@ -26,6 +26,7 @@
       'brand.tagline': 'hours turn into reward',
       'wallet.label': 'Focus tokens',
       'engine.checking': 'checking model…',
+      'engine.loading': 'loading model…',
       'engine.online': 'local model active',
       'engine.fallback': 'model not found · fallback phrases',
       'engine.offline': 'backend unavailable',

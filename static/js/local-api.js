@@ -451,8 +451,28 @@
    */
   var ROUTES = [
     ['GET', '/api/health', function () {
-      return { status: 'ok', version: 'mobile', frozen: false,
-               llm_available: false, data_dir: 'browser' };
+      // Состояние модели берётся у модуля выполнения, а не задаётся
+      // числом. Прежде здесь стояло llm_available: false — значение,
+      // верное лишь для выпуска без модели. В выпуске с моделью веса
+      // лежали в приложении, загружались и использовались оракулом, но
+      // шапка сообщала «модель не найдена», потому что читала именно
+      // это поле. Ошибка тихая вдвойне: приложение работало правильно, а
+      // выглядело сломанным.
+      //
+      // Модуль подключается только в сборке с моделью, поэтому его
+      // отсутствие — обычное состояние, а не сбой.
+      var llm = global.LocalLLM;
+      var llmStatus = llm ? llm.status() : 'absent';
+
+      return {
+        status: 'ok',
+        version: 'mobile',
+        frozen: false,
+        llm_available: llmStatus === 'ready',
+        llm_status: llmStatus,
+        llm_reason: llm ? llm.reason() : '',
+        data_dir: 'browser'
+      };
     }],
 
     ['GET', '/api/tasks/', function () {
