@@ -166,6 +166,8 @@ jobs:
 
       - name: Собрать веб-часть
         working-directory: mobile
+        env:
+          CAPACITOR_BUILD: "1"
         run: npm run build
 
       - name: Создать проект Android
@@ -231,6 +233,11 @@ jobs:
 
           cp mobile/android/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml \
              mobile/android/app/src/main/res/mipmap-anydpi-v26/ic_launcher_round.xml
+
+      - name: Подготовить ресурсы Android
+        # Разрешения на точные напоминания и значок строки состояния —
+        # ни того, ни другого нет в проекте, созданном оболочкой.
+        run: bash tools/prepare_android_resources.sh
 
       - name: Подключить предупреждение о проверке разработчиков
         run: bash tools/add_freedroidwarn.sh
@@ -365,6 +372,7 @@ jobs:
 
           # Сборщик копирует веса сам: указывать их путь достаточно.
           cd mobile
+          CAPACITOR_BUILD=1 \
           MYQUESTIFY_WITH_MODEL=1 \
           MYQUESTIFY_MODEL_PATH="$(cd .. && pwd)/models/model-mobile.gguf" \
             npm run build
