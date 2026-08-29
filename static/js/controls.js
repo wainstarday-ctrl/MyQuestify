@@ -155,6 +155,9 @@
     var hours = 12;
     var minutes = 0;
 
+    /** Трогал ли пользователь время: до этого оно подставляется само. */
+    var timeTouched = false;
+
     var wrap = document.createElement('div');
     wrap.className = 'picker';
 
@@ -176,11 +179,25 @@
     var panel = document.createElement('div');
     panel.className = 'picker__panel';
     panel.hidden = true;
+    // Прокрутка внутри панели нужна вместе с ограничением высоты: при
+    // открытой клавиатуре видимой области не хватает на всю сетку месяца.
+    panel.style.overflowY = 'auto';
 
     input.parentNode.insertBefore(wrap, input);
     input.type = 'hidden';
     wrap.appendChild(trigger);
     wrap.appendChild(input);
+
+    // Подпись переводится с поля на кнопку. Поле стало скрытым, а скрытые
+    // поля не относятся к тем, которые label вправе описывать: браузер
+    // сообщает «Incorrect use of <label for=...>», а экранная читалка
+    // остаётся без названия элемента. Кнопка описывается подписью законно,
+    // и щелчок по подписи по-прежнему открывает календарь.
+    if (input.id) {
+      trigger.id = input.id + '-trigger';
+      var bound = document.querySelector('label[for="' + input.id + '"]');
+      if (bound) { bound.htmlFor = trigger.id; }
+    }
 
     // Панель живёт в body, а не внутри обёртки: родительская карточка имеет
     // overflow: hidden, и календарь обрезался по её краю. Позиция считается
@@ -254,6 +271,12 @@
      * нажатием и отпусканием, из-за чего быстрое листание срывалось.
      */
     function buildSkeleton() {
+      // Имена полей разрядов выводятся из имени исходного поля: на странице
+      // два календаря, и одинаковые имена дали бы совпадающие
+      // идентификаторы. Без них браузер сообщает, что у поля формы нет ни
+      // id, ни name.
+      var base = input.id || 'picker';
+
       panel.innerHTML = '' +
         '<div class="picker__head">' +
           '<button type="button" class="picker__nav" data-move="-12" aria-label="' + t('picker.prevYear', 'Предыдущий год') + '">«</button>' +
@@ -271,6 +294,7 @@
           '<div class="picker__clock">' +
             '<button type="button" class="picker__spin" data-time="h+">▲</button>' +
             '<input class="picker__digits" data-part="h" type="text" ' +
+              'id="' + base + '-hours" name="' + base + '-hours" ' +
               'inputmode="numeric" maxlength="2" value="12" aria-label="' + t('picker.hours', 'Часы') + '">' +
             '<button type="button" class="picker__spin" data-time="h-">▼</button>' +
           '</div>' +
@@ -278,6 +302,7 @@
           '<div class="picker__clock">' +
             '<button type="button" class="picker__spin" data-time="m+">▲</button>' +
             '<input class="picker__digits" data-part="m" type="text" ' +
+              'id="' + base + '-minutes" name="' + base + '-minutes" ' +
               'inputmode="numeric" maxlength="2" value="00" aria-label="' + t('picker.minutes', 'Минуты') + '">' +
             '<button type="button" class="picker__spin" data-time="m-">▼</button>' +
           '</div>' +
@@ -387,29 +412,81 @@
      * Ставит панель под кнопкой, разворачивая её вверх или влево,
      * если снизу или справа не хватает места.
      */
+    /**
+     * Возвращает видимую часть экрана.
+     *
+     * ``window.innerHeight`` описывает окно целиком и не учитывает
+     * экранную клавиатуру: при её появлении половина окна оказывается
+     * перекрыта, а размеры остаются прежними. ``visualViewport`` сообщает
+     * именно ту область, которую пользователь видит.
+     *
+     * @returns {{left: number, top: number, width: number, height: number}}
+     */
+    function viewport() {
+      var vv = global.visualViewport;
+      if (!vv) {
+        return {
+          left: 0, top: 0,
+          width: window.innerWidth, height: window.innerHeight
+        };
+      }
+      return {
+        left: vv.offsetLeft, top: vv.offsetTop,
+        width: vv.width, height: vv.height
+      };
+    }
+
+    /**
+     * Ставит панель под кнопкой, разворачивая её вверх или влево,
+     * если снизу или справа не хватает места.
+     */
     function place() {
+      var vp = viewport();
+      var gap = 8;
+      var margin = 12;
+
+      // Высота ограничивается видимой областью до измерения: при открытой
+      // клавиатуре панель иначе уходит под неё целиком, и поля разрядов,
+      // ради которых клавиатуру и открыли, оказываются вне экрана.
+      panel.style.maxHeight = Math.max(180, vp.height - margin * 2) + 'px';
+
       var rect = trigger.getBoundingClientRect();
       var width = panel.offsetWidth || 296;
       var height = panel.offsetHeight || 380;
-      var gap = 8;
 
       var left = rect.left;
-      if (left + width > window.innerWidth - 12) {
-        left = Math.max(12, window.innerWidth - width - 12);
+      if (left + width > vp.left + vp.width - margin) {
+        left = vp.left + vp.width - width - margin;
       }
+      left = Math.max(vp.left + margin, left);
 
       var top = rect.bottom + gap;
-      if (top + height > window.innerHeight - 12) {
+      if (top + height > vp.top + vp.height - margin) {
         // Снизу не помещается — раскрываем вверх от кнопки.
         var above = rect.top - gap - height;
-        top = above > 12 ? above : Math.max(12, window.innerHeight - height - 12);
+        top = above > vp.top + margin
+          ? above
+          : vp.top + vp.height - height - margin;
       }
+      top = Math.max(vp.top + margin, top);
 
       panel.style.left = Math.round(left) + 'px';
       panel.style.top = Math.round(top) + 'px';
     }
 
     function open() {
+      // Время по умолчанию — ближайший целый час, а не полдень. Полдень
+      // после обеда указывает в прошлое, и выбор сегодняшнего числа сразу
+      // давал предупреждение с переносом на завтра: пользователь получал
+      // не тот день, который выбрал.
+      if (!selected && !timeTouched) {
+        var next = new Date();
+        next.setMinutes(0, 0, 0);
+        next.setHours(next.getHours() + 1);
+        hours = next.getHours();
+        minutes = 0;
+      }
+
       if (selected) { view = new Date(selected.getFullYear(), selected.getMonth(), 1); }
       renderPanel();
       panel.hidden = false;
@@ -418,7 +495,29 @@
       place();
     }
 
-    function close() {
+    /**
+     * Приводит выбранный момент в будущее перед сохранением.
+     *
+     * Прежде проверка стояла только на кнопке «Готово», и любой другой
+     * способ закрыть панель — щелчок мимо, прокрутка страницы — сохранял
+     * уже прошедшее время. Квест создавался сразу просроченным, и штраф
+     * списывался за срок, которого у пользователя не было.
+     */
+    function settle() {
+      if (!isPastTime()) { return; }
+      liftToFuture();
+      commit();
+    }
+
+    /**
+     * Закрывает панель.
+     *
+     * @param {Object} [options] keepValue — не трогать значение. Нужно при
+     *     подстановке извне: у правки просроченного квеста срок в прошлом
+     *     законен, и переносить его молча нельзя.
+     */
+    function close(options) {
+      if (!options || !options.keepValue) { settle(); }
       panel.hidden = true;
       trigger.classList.remove('is-open');
     }
@@ -463,6 +562,7 @@
       if (value === null) { return; }
 
       if (isHours) { hours = value; } else { minutes = value; }
+      timeTouched = true;
       if (selected) { commit(); } else { renderLabel(); }
 
       // Поля не перерисовываются целиком, поэтому обновляется только
@@ -512,6 +612,7 @@
         if (code === 'h-') { hours = (hours + 23) % 24; }
         if (code === 'm+') { minutes = (minutes + 5) % 60; }
         if (code === 'm-') { minutes = (minutes + 55) % 60; }
+        timeTouched = true;
         if (selected) { commit(); } else { renderLabel(); }
         renderPanel();
         return;
@@ -561,7 +662,26 @@
     // она уехала бы от своей кнопки — в этом случае её проще закрыть.
     // Прокрутка внутри самой панели исключается: иначе колесо мыши над
     // календарём закрывало бы его.
-    window.addEventListener('resize', close);
+    // Изменение размеров окна раньше закрывало панель безусловно. На
+    // телефоне это и есть появление экранной клавиатуры: нажатие на поле
+    // разрядов открывало клавиатуру, та меняла размер окна, и панель
+    // закрывалась прежде, чем удавалось набрать хоть одну цифру. Ввод
+    // времени с клавиатуры был невозможен.
+    //
+    // Теперь окно закрывается, только если ввод не идёт внутри него;
+    // при вводе панель переставляется под изменившуюся видимую область.
+    function onViewportChange() {
+      if (panel.hidden) { return; }
+      if (panel.contains(document.activeElement)) { place(); return; }
+      close();
+    }
+
+    window.addEventListener('resize', onViewportChange);
+    if (global.visualViewport) {
+      global.visualViewport.addEventListener('resize', onViewportChange);
+      global.visualViewport.addEventListener('scroll', onViewportChange);
+    }
+
     window.addEventListener('scroll', function (event) {
       if (panel.hidden) { return; }
       if (event.target && panel.contains(event.target)) { return; }
@@ -575,7 +695,7 @@
      * дней недели и кнопок, поэтому смена языка требует его пересборки.
      */
     wrap.retranslate = function () {
-      close();
+      close({ keepValue: true });
       buildSkeleton();
       renderLabel();
     };
@@ -590,7 +710,9 @@
         selected = null;
         hours = 12;
         minutes = 0;
+        timeTouched = false;
       } else {
+        timeTouched = true;
         var date = new Date(iso);
         if (isNaN(date.getTime())) { return; }
         selected = new Date(date.getFullYear(), date.getMonth(), date.getDate());
@@ -598,7 +720,7 @@
         minutes = date.getMinutes();
       }
       commit();
-      close();
+      close({ keepValue: true });
     };
 
     /** Внешний сброс: используется после создания квеста. */
@@ -606,8 +728,9 @@
       selected = null;
       hours = 12;
       minutes = 0;
+      timeTouched = false;
       commit();
-      close();
+      close({ keepValue: true });
     };
 
     renderLabel();
