@@ -32,6 +32,13 @@
    * занимает около 400 МБ под веса, плюс контекст и исполняющая среда.
    * Android отдаёт приложению примерно 45 % памяти устройства, поэтому при
    * четырёх гигабайтах остаётся около 1.8 ГБ — с запасом, но без роскоши.
+   *
+   * Значение сверяется с navigator.deviceMemory, а тот округляет объём до
+   * степени двойки и не сообщает больше восьми. Устройство с тремя
+   * гигабайтами объявляет два и отсекается, хотя могло бы справиться.
+   * Огрубление принимается: ошибка в сторону отказа означает работу по
+   * заготовленным фразам, ошибка в другую сторону — закрытие приложения
+   * системой посреди ответа.
    */
   var MIN_DEVICE_MEMORY_GB = 4;
 
@@ -45,6 +52,26 @@
   var loading = null;
   var status = 'idle';
   var lastError = '';
+
+  /**
+   * Приводит путь к абсолютному адресу.
+   *
+   * Веса и исполняемый модуль читает не главный поток, а рабочий поток
+   * wllama, созданный из blob-адреса. Относительный путь в нём разрешать
+   * не от чего: у blob нет каталога, относительно которого считать. Попытка
+   * заканчивается отказом разбора адреса ещё до обращения к файлу, и в
+   * журнале это выглядит как «Failed to parse URL», а не как «файл не
+   * найден» — причина, по которой неполадка кажется загадочной.
+   *
+   * Преобразование выполняется здесь, на главном потоке, где базовый адрес
+   * страницы известен.
+   *
+   * @param {string} path путь относительно страницы
+   * @returns {string} абсолютный адрес
+   */
+  function absoluteUrl(path) {
+    return new URL(path, global.location.href).href;
+  }
 
   /**
    * Проверяет, стоит ли пытаться загрузить модель на этом устройстве.
@@ -92,6 +119,15 @@
     if (!device.ok) {
       status = 'unsupported';
       lastError = device.reason;
+
+      // Отказ по устройству сообщается в журнал наравне с неудачей
+      // загрузки. Без этого единственная ветка, в которой модель молча не
+      // появляется, ничем не отличается снаружи от поломки: в шапке
+      // «модель не найдена», в журнале пусто.
+      if (global.console) {
+        global.console.warn('MyQuestify: модель отключена —', device.reason);
+      }
+
       return Promise.resolve(null);
     }
 
@@ -105,11 +141,11 @@
         }
 
         var runtime = new Wllama({
-          'single-thread/wllama.wasm': 'static/js/vendor/wllama/single-thread/wllama.wasm',
-          'multi-thread/wllama.wasm': 'static/js/vendor/wllama/multi-thread/wllama.wasm'
+          'single-thread/wllama.wasm': absoluteUrl('static/js/vendor/wllama/single-thread/wllama.wasm'),
+          'multi-thread/wllama.wasm': absoluteUrl('static/js/vendor/wllama/multi-thread/wllama.wasm')
         });
 
-        return runtime.loadModelFromUrl('static/models/model.gguf', {
+        return runtime.loadModelFromUrl(absoluteUrl('static/models/model.gguf'), {
           n_ctx: CONTEXT_SIZE,
           // Число потоков не задаётся: библиотека выбирает его сама по
           // числу ядер, а на телефоне избыточный параллелизм лишь
