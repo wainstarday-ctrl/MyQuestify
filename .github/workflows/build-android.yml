@@ -5,11 +5,13 @@ name: Сборка для Android
 # несколько гигабайт, и не требуется устойчивое соединение для загрузки
 # сотен пакетов — у машины сборки оно заведомо надёжнее домашнего.
 #
-# Собирается отладочная разновидность. Она подписана временным ключом,
-# устанавливается на любое устройство и годится для проверки и раздачи.
-# Разновидность для публикации в магазине требует собственного ключа
-# подписи, который нельзя хранить в репозитории: его огласка позволила бы
-# выпустить поддельное обновление от имени автора.
+# Собирается разновидность для выпуска, подписанная постоянным ключом из
+# секретов хранилища. Отладочная подпись, применявшаяся раньше, была
+# непригодна для раздачи: Gradle создаёт отладочное хранилище ключей сам,
+# когда его нет, и на чистой машине сборки оно создаётся заново при каждом
+# запуске со случайной парой ключей. Приложения из разных запусков имели
+# разные подписи, и установить новый выпуск поверх старого было нельзя —
+# система отказывала, а обновление через удаление уносило прогресс.
 
 on:
   push:
@@ -54,6 +56,41 @@ jobs:
           fi
 
           echo "value=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Проверить наличие ключа подписи
+        # Проверка стоит до сборки намеренно. Без ключа подписать нечем, и
+        # двадцать минут работы закончились бы отказом на последнем шаге.
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+
+          MISSING=""
+          [ -n "$KEYSTORE_BASE64" ]  || MISSING="$MISSING KEYSTORE_BASE64"
+          [ -n "$KEYSTORE_PASSWORD" ] || MISSING="$MISSING KEYSTORE_PASSWORD"
+          [ -n "$KEY_ALIAS" ]         || MISSING="$MISSING KEY_ALIAS"
+          [ -n "$KEY_PASSWORD" ]      || MISSING="$MISSING KEY_PASSWORD"
+
+          if [ -n "$MISSING" ]; then
+            echo "::error::Не заданы секреты:$MISSING"
+            echo "::error::Settings — Secrets and variables — Actions."
+            exit 1
+          fi
+
+          echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
+
+          # Хранилище ключей это архив определённого формата. Ошибка при
+          # переносе в base64 даёт файл, который пройдёт все шаги и упадёт
+          # только на подписи, где причина уже не видна.
+          SIZE=$(wc -c < "$RUNNER_TEMP/release.jks")
+          if [ "$SIZE" -lt 512 ]; then
+            echo "::error::Хранилище ключей подозрительно мало: ${SIZE} байт."
+            exit 1
+          fi
+          echo "Ключ подписи получен"
 
       - name: Проверить наличие физического движка
         run: |
@@ -195,17 +232,37 @@ jobs:
           cp mobile/android/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml \
              mobile/android/app/src/main/res/mipmap-anydpi-v26/ic_launcher_round.xml
 
+      - name: Подключить предупреждение о проверке разработчиков
+        run: bash tools/add_freedroidwarn.sh
+
+      - name: Проверить отсутствие служб Google
+        # Приложение объявлено полностью офлайновым, и это утверждение стоит
+        # проверять, а не повторять. Служба аналитики или уведомлений может
+        # прийти не из кода, а зависимостью дополнения к оболочке, и заметить
+        # это по исходникам нельзя.
+        run: bash tools/check_no_gms.sh
+
       - name: Собрать приложение
         working-directory: mobile/android
         run: |
           chmod +x gradlew
-          ./gradlew assembleDebug --no-daemon
+          ./gradlew assembleRelease --no-daemon
 
-      - name: Переименовать файл
+      - name: Подписать и приложить основной выпуск
+        env:
+          MYQUESTIFY_KEYSTORE: ${{ runner.temp }}/release.jks
+          MYQUESTIFY_STORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          MYQUESTIFY_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          MYQUESTIFY_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          MYQUESTIFY_EXPECTED_CERT: ${{ secrets.RELEASE_CERT_SHA256 }}
         run: |
+          set -euo pipefail
           mkdir -p release
-          cp mobile/android/app/build/outputs/apk/debug/app-debug.apk \
-             "release/MyQuestify-${{ steps.version.outputs.value }}-android.apk"
+
+          bash tools/sign_apk.sh \
+            mobile/android/app/build/outputs/apk/release/app-release-unsigned.apk \
+            "release/MyQuestify-${{ steps.version.outputs.value }}-android.apk"
+
           ls -lh release/
 
       - name: Загрузить библиотеку выполнения модели
@@ -245,10 +302,10 @@ jobs:
           mkdir -p models
 
           curl --location --fail --show-error --silent \
-               --retry 5 --retry-delay 10 --retry-all-errors \
-               --connect-timeout 30 --max-time 900 \
-               --output models/model-mobile.gguf \
-               "$MODEL_URL"
+            --retry 5 --retry-delay 10 --retry-all-errors \
+            --connect-timeout 30 --max-time 900 \
+            --output models/model-mobile.gguf \
+            "$MODEL_URL"
 
           SIZE_MB=$(( $(wc -c < models/model-mobile.gguf) / 1024 / 1024 ))
           echo "Веса: ${SIZE_MB} МБ"
@@ -264,11 +321,45 @@ jobs:
             exit 1
           fi
 
-      - name: Собрать приложение с моделью
-        # Выполняется, только если оба предыдущих шага удались. Неудача не
-        # отменяет основного выпуска: он уже собран и приложен.
+      - name: Развести выпуски по идентификаторам
+        # Выпуск с моделью и выпуск без неё это два разных приложения на
+        # устройстве, а не два состояния одного. Причина в подписи: базовый
+        # вариант однажды может уйти в чужой репозиторий и будет подписан
+        # чужим ключом, а Android не даёт заменить приложение сборкой с
+        # другой подписью иначе как через удаление. Разные идентификаторы
+        # позволяют держать оба рядом и переносить прогресс осознанно.
         if: steps.weights.outcome == 'success'
         continue-on-error: true
+        id: identity
+        run: |
+          set -euo pipefail
+
+          GRADLE=mobile/android/app/build.gradle
+          STRINGS=mobile/android/app/src/main/res/values/strings.xml
+
+          sed -i -E 's/applicationId "([^"]+)"/applicationId "\1.full"/' "$GRADLE"
+          grep -qE 'applicationId "[^"]+\.full"' "$GRADLE" \
+            || { echo "::error::Не удалось развести идентификаторы"; exit 1; }
+
+          # Одинаковое имя под двумя значками в списке приложений не даёт
+          # понять, какой из них с моделью.
+          sed -i -E 's|(<string name="app_name">)([^<]*)(</string>)|\1\2 Full\3|' "$STRINGS"
+          grep -q 'Full</string>' "$STRINGS" \
+            || { echo "::error::Не удалось переименовать выпуск с моделью"; exit 1; }
+
+          grep -E 'applicationId|app_name' "$GRADLE" "$STRINGS" || true
+
+      - name: Собрать приложение с моделью
+        # Выполняется, только если все предыдущие шаги удались. Неудача не
+        # отменяет основного выпуска: он уже собран, подписан и приложен.
+        if: steps.identity.outcome == 'success'
+        continue-on-error: true
+        env:
+          MYQUESTIFY_KEYSTORE: ${{ runner.temp }}/release.jks
+          MYQUESTIFY_STORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          MYQUESTIFY_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          MYQUESTIFY_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          MYQUESTIFY_EXPECTED_CERT: ${{ secrets.RELEASE_CERT_SHA256 }}
         run: |
           set -euo pipefail
 
@@ -280,11 +371,12 @@ jobs:
 
           npx cap sync android
           cd android
-          ./gradlew assembleDebug --no-daemon
-
+          ./gradlew assembleRelease --no-daemon
           cd ../..
-          cp mobile/android/app/build/outputs/apk/debug/app-debug.apk \
-             "release/MyQuestify-${{ steps.version.outputs.value }}-android-with-model.apk"
+
+          bash tools/sign_apk.sh \
+            mobile/android/app/build/outputs/apk/release/app-release-unsigned.apk \
+            "release/MyQuestify-${{ steps.version.outputs.value }}-android-with-model.apk"
 
           SIZE_MB=$(( $(wc -c < "release/MyQuestify-${{ steps.version.outputs.value }}-android-with-model.apk") / 1024 / 1024 ))
           echo "Приложение с моделью: ${SIZE_MB} МБ"
