@@ -123,18 +123,22 @@ function prepareHtml(html) {
 
   out = out.replace('  <script src="/static/js/app.js"></script>', scripts);
 
-  // Мост Capacitor подключается первым: модуль уведомлений проверяет его
-  // наличие при загрузке, чтобы выбрать способ доставки сообщений.
+  // Мост оболочки подключается только в сборке для браузера, где рядом
+  // лежит заглушка. В приложении мост предоставляет сама оболочка, а тег
+  // со ссылкой на отсутствующий файл давал бы запись об ошибке загрузки
+  // при каждом запуске.
   //
-  // Обработчик onerror гасит сообщение в консоли. В сборке приложения
-  // файла capacitor.js в www нет — мост подключается оболочкой отдельно, —
-  // и без обработчика каждый запуск давал бы красную строку об ошибке
-  // загрузки, за которой теряются настоящие неполадки.
-  out = out.replace(
-    '  <script src="/static/js/vendor/matter.min.js"></script>',
-    '  <script src="capacitor.js" onerror="this.dataset.missing=1"></script>\n' +
-    '  <script src="/static/js/vendor/matter.min.js"></script>'
-  );
+  // Обработчик onerror здесь не помогает: он гасит событие, но запись
+  // браузера о неудачном сетевом запросе появляется в консоли независимо
+  // от него, и убрать её из JavaScript нельзя. Единственный способ —
+  // не подключать файл, которого нет.
+  if (!CAPACITOR_BUILD) {
+    out = out.replace(
+      '  <script src="/static/js/vendor/matter.min.js"></script>',
+      '  <script src="capacitor.js" onerror="this.dataset.missing=1"></script>\n' +
+      '  <script src="/static/js/vendor/matter.min.js"></script>'
+    );
+  }
 
   // Пути делаются относительными: в приложении страница открывается не с
   // корня веб-сервера, и ведущая косая черта увела бы в никуда.
@@ -173,7 +177,8 @@ function main() {
   }
 
   const html = fs.readFileSync(path.join(ROOT, 'templates', 'index.html'), 'utf8');
-  fs.writeFileSync(path.join(OUT, 'index.html'), prepareHtml(html), 'utf8');
+  const page = prepareHtml(html);
+  fs.writeFileSync(path.join(OUT, 'index.html'), page, 'utf8');
 
   // Заглушка моста оболочки — только для проверки в браузере.
   //
@@ -185,9 +190,22 @@ function main() {
   // ищешь настоящую неполадку.
   if (!CAPACITOR_BUILD) {
     fs.writeFileSync(path.join(OUT, 'capacitor.js'), SHELL_STUB, 'utf8');
-    console.log('  заглушка моста: создана (сборка для браузера)');
+    console.log('  мост оболочки: заглушка (сборка для браузера)');
   } else {
-    console.log('  заглушка моста: пропущена (сборка приложения)');
+    console.log('  мост оболочки: подключит оболочка (сборка приложения)');
+  }
+
+  // Проверка согласованности: тег и файл заглушки должны появляться и
+  // исчезать вместе. Рассогласование даёт одну из двух неполадок — ложное
+  // сообщение о работе в браузере внутри приложения или запись об ошибке
+  // загрузки отсутствующего файла. Ни то, ни другое не роняет сборку и
+  // обнаруживается только на устройстве, через отладку по кабелю.
+  const hasTag = page.includes('src="capacitor.js"');
+  const hasFile = fs.existsSync(path.join(OUT, 'capacitor.js'));
+  if (hasTag !== hasFile) {
+    console.error('\n  ОШИБКА: тег capacitor.js и файл заглушки рассогласованы.');
+    console.error(`  тег в разметке: ${hasTag}, файл в сборке: ${hasFile}`);
+    process.exit(1);
   }
 
   // Проверка обязательного вендорного файла: без него сцены не работают,
