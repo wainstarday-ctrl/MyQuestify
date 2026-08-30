@@ -51,6 +51,38 @@
   var MIN_STEP_MS = 8;
 
   /**
+   * Шаг физики. Постоянный и не зависящий от частоты кадров.
+   *
+   * Прежде в Matter передавалась настоящая длительность кадра, ограниченная
+   * промежутком от 8 до 32 мс. При падении частоты кадров шаг рос вдвое, и
+   * контакты покоя переставали сходиться: тела, лежащие на земле,
+   * подрагивали и подпрыгивали. Заметнее всего это стало в выпуске с
+   * моделью — её загрузка и работа отнимают время у отрисовки.
+   *
+   * Постоянный шаг убирает зависимость поведения от нагрузки: при любой
+   * частоте кадров физика считается одинаковыми порциями.
+   */
+  var FIXED_STEP_MS = 1000 / 60;
+
+  /**
+   * Предел числа шагов физики за один кадр.
+   *
+   * Без него после длительной остановки — загрузки весов, возврата из
+   * фона — накопленное время отыгрывалось бы сотнями шагов подряд. Кадр
+   * занял бы секунды, накопил ещё больше времени и сорвался бы в
+   * лавину, из которой сцена уже не выходит.
+   */
+  var MAX_SUBSTEPS = 5;
+
+  /**
+   * Наибольший промежуток, который считается пропущенным временем.
+   *
+   * Всё, что дольше, отбрасывается: сцена продолжается с того места, где
+   * остановилась, а не отыгрывает минуты, проведённые приложением в фоне.
+   */
+  var MAX_FRAME_MS = 100;
+
+  /**
    * Порядок профилей от тяжёлого к лёгкому. Понижение идёт по нему на шаг.
    */
   var PROFILE_ORDER = ['high', 'medium', 'low'];
@@ -144,6 +176,9 @@
     level: 1,
     running: false,
     lastTime: 0,
+
+    /** Накопленное время, ещё не отданное физике. */
+    accumulator: 0,
     rafId: 0,
     resizeTimer: 0,
     errorStreak: 0,
@@ -812,8 +847,11 @@
   function frame(timestamp) {
     if (!S.running) { return; }
 
-    var delta = S.lastTime ? timestamp - S.lastTime : 16.7;
+    var delta = S.lastTime ? timestamp - S.lastTime : FIXED_STEP_MS;
     S.lastTime = timestamp;
+
+    // Шаг для сцены остаётся переменным: частицы и блики двигаются при
+    // отрисовке, и им нужно настоящее время кадра, а не шаг физики.
     var step = util.clamp(delta, MIN_STEP_MS, MAX_STEP_MS);
 
     if (S.lastTime) { considerDowngrade(delta); }
@@ -825,7 +863,19 @@
       // останавливаемся явно, с сообщением.
       try {
         if (S.scene.usesPhysics !== false && S.engine) {
-          global.Matter.Engine.update(S.engine, step);
+          // Физика считается постоянными порциями. Накопленное время
+          // сверх допустимого числа шагов отбрасывается: отыгрывать
+          // пропущенную минуту незачем, а попытка это сделать вешает
+          // приложение.
+          S.accumulator += Math.min(delta, MAX_FRAME_MS);
+
+          var steps = 0;
+          while (S.accumulator >= FIXED_STEP_MS && steps < MAX_SUBSTEPS) {
+            global.Matter.Engine.update(S.engine, FIXED_STEP_MS);
+            S.accumulator -= FIXED_STEP_MS;
+            steps += 1;
+          }
+          if (S.accumulator > FIXED_STEP_MS) { S.accumulator = 0; }
         }
         if (typeof S.scene.update === 'function') {
           S.scene.update(step, timestamp);
@@ -860,6 +910,9 @@
     if (S.running) { return; }
     S.running = true;
     S.lastTime = 0;
+    // Накопитель обнуляется вместе с отсчётом времени: остаток от прошлого
+    // запуска отыгрался бы рывком в первом же кадре.
+    S.accumulator = 0;
     S.rafId = global.requestAnimationFrame(frame);
   }
 
