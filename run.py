@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import logging
 import multiprocessing
+import os
 import socket
 import sys
 import threading
@@ -442,7 +443,16 @@ def main() -> int:
     elif IS_MACOS:
         gui_backend = None
     else:
-        gui_backend = "gtk"
+        # Linux. В собранной версии окно рисует QtWebEngine: он входит в
+        # поставку целиком и не зависит от того, что установлено в системе.
+        # Прежний выбор GTK требовал бы webkit2gtk от дистрибутива, а его
+        # имя и версия разнятся: на системе без него окно не открылось бы
+        # вовсе. Из исходных текстов приложение запускают на машине
+        # разработчика, где GTK обычно уже есть, — там остаётся он.
+        #
+        # MYQUESTIFY_GUI задаёт движок вручную: "gtk", "qt" или другое имя,
+        # известное PyWebView.
+        gui_backend = os.environ.get("MYQUESTIFY_GUI") or ("qt" if IS_FROZEN else "gtk")
 
     try:
         # Блокирующий вызов: возвращает управление после закрытия окна.

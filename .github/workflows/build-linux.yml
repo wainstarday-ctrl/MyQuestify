@@ -1,0 +1,400 @@
+name: Сборка для Linux
+
+# Сборка выполняется на машине GitHub. PyInstaller упаковывает приложение
+# той системы, на которой запущен, поэтому собрать выпуск для Linux на
+# Windows невозможно — как и для macOS.
+#
+# Запускается двумя способами:
+#   * при отправке метки вида v1.2.3 — файл прикладывается к выпуску;
+#   * вручную со страницы Actions — файл остаётся вложением сборки.
+#
+# Отличие от прочих сборок — проверка запуском. Настольные выпуски для
+# Windows и macOS автор запускает у себя; машины с Linux у него нет, и
+# ошибка вида «окно открылось пустым» осталась бы незамеченной до первого
+# пользователя. Поэтому собранное приложение здесь же запускается на
+# виртуальном экране, и сборка считается удавшейся, только если оно
+# ответило по своему адресу.
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  PYTHONIOENCODING: utf-8
+
+jobs:
+  build:
+    # Версия системы взята не самая новая намеренно: собранное приложение
+    # требует библиотеку языка C не старше той, что была на машине сборки.
+    # Сборка на 22.04 запускается и на более новых системах, обратное
+    # неверно. Если GitHub снимет этот образ с обслуживания, шаг оборвётся
+    # сразу с сообщением о неизвестной метке — тогда значение меняется на
+    # ubuntu-latest ценой совместимости со старыми дистрибутивами.
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Получить исходный код
+        uses: actions/checkout@v4
+
+      - name: Определить версию
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Метка вида v1.9.0 задаётся при выпуске и служит источником
+          # истины. При ручном запуске метки нет, поэтому берётся значение
+          # из кода — так сборка для проверки остаётся возможной.
+          REF="${GITHUB_REF_NAME:-}"
+          if [[ "${GITHUB_REF:-}" == refs/tags/* ]]; then
+            VERSION="${REF#v}"
+            echo "Версия из метки: $VERSION"
+          else
+            VERSION=$(python -c "import sys; sys.path.insert(0, '.'); from app.config import APP_VERSION; print(APP_VERSION)")
+            echo "Метки нет, версия из кода: $VERSION"
+          fi
+
+          echo "value=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Установить Python
+        uses: actions/setup-python@v5
+        with:
+          # Та же версия, что и в сборке для macOS: под неё существуют
+          # готовые сборки llama-cpp-python.
+          python-version: '3.12'
+
+      - name: Проверить наличие физического движка
+        run: |
+          if [ ! -s static/js/vendor/matter.min.js ]; then
+            echo "::error::Отсутствует static/js/vendor/matter.min.js."
+            echo "::error::Без него интерактивные сцены не работают."
+            echo "::error::Файл должен быть закоммичен в репозиторий."
+            exit 1
+          fi
+          echo "matter.min.js на месте"
+
+      - name: Установить Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Проверить правила и защитный фильтр
+        # Расчёт награды, штрафа, уровня сцены, работа фильтра безопасности и
+        # поведение маршрутов сервера от платформы не зависят, но ошибка в них
+        # попала бы сразу во все выпуски.
+        run: |
+          pip install pytest httpx fastapi "sqlalchemy[asyncio]" aiosqlite pydantic
+
+          python -m pytest tests/ -q
+
+      - name: Сверить защитные слои двух версий
+        run: python tools/check_safety_parity.py
+
+      - name: Проверить запуск интерфейса
+        run: node tools/smoke_test.js
+
+      - name: Измерить нагрузку сцен на холст
+        run: node tools/bench_clouds.js
+
+      - name: Проверить ядро сцен и мобильную серверную часть
+        run: |
+          node tools/check_stage_profile.js
+          node tools/check_local_api.js
+
+      - name: Поставить системные библиотеки
+        # QtWebEngine несёт внутри себя движок просмотра, но обращается к
+        # системным библиотекам работы с окнами, звуком и шрифтами. На машине
+        # сборки их нет: образ рассчитан на программы без интерфейса.
+        # Xvfb — виртуальный экран: без него приложение не с чем связать окно,
+        # и проверка запуском была бы невозможна.
+        run: |
+          set -euo pipefail
+
+          sudo apt-get update
+
+          sudo apt-get install -y --no-install-recommends \
+            xvfb \
+            libnss3 \
+            libxkbcommon0 \
+            libxkbcommon-x11-0 \
+            libxcb-icccm4 \
+            libxcb-image0 \
+            libxcb-keysyms1 \
+            libxcb-randr0 \
+            libxcb-render-util0 \
+            libxcb-shape0 \
+            libxcb-xinerama0 \
+            libxcb-xfixes0 \
+            libxcomposite1 \
+            libxdamage1 \
+            libxrandr2 \
+            libxtst6 \
+            libgl1 \
+            libegl1 \
+            libdbus-1-3 \
+            fonts-dejavu-core
+
+          # Библиотека звука переименована в системах новее 22.04. Оба имени
+          # перечислять нельзя — apt оборвётся на несуществующем, — поэтому
+          # второе пробуется, только если первого не нашлось.
+          sudo apt-get install -y --no-install-recommends libasound2 \
+            || sudo apt-get install -y --no-install-recommends libasound2t64
+
+      - name: Установить зависимости
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements-linux.txt
+          pip install pyinstaller pillow
+
+      - name: Установить пакет инференса
+        # Порядок тот же, что на прочих платформах: сначала готовая сборка с
+        # указателя автора, и лишь при её отсутствии — сборка из исходных
+        # текстов. На Linux она проходит успешно, но занимает минуты.
+        run: |
+          set -uo pipefail
+
+          pip install llama-cpp-python --prefer-binary \
+            --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu \
+            && python -c "import llama_cpp" 2>/dev/null \
+            || {
+              echo "::warning::Готовой сборки нет, собираю из исходных текстов."
+              pip install llama-cpp-python --no-binary :all:
+            }
+
+          # Проверка импортом: установка может пройти, а библиотека — не
+          # загрузиться, если рядом не оказалось нативной части.
+          python -c "import llama_cpp; print('llama_cpp', llama_cpp.__version__)" || {
+            echo "::error::Пакет инференса недоступен — выпуск с моделью был бы нерабочим."
+            exit 1
+          }
+
+      - name: Подготовить значок
+        # Значок рисуется кодом в формате Windows. Для ярлыка в меню
+        # приложений нужен обычный PNG, и он извлекается из того же файла:
+        # так изображение остаётся одним для всех систем.
+        run: |
+          set -euo pipefail
+
+          python tools/make_icon.py
+          python - <<'PY'
+          from PIL import Image
+
+          source = Image.open("assets/icon.ico")
+          # В файле лежит несколько размеров; берётся наибольший.
+          largest = max(source.ico.sizes()) if hasattr(source, "ico") else source.size
+          source.size = largest
+          source.load()
+          source.convert("RGBA").save("assets/icon.png")
+          print("Значок для Linux:", largest)
+          PY
+
+      - name: Собрать приложение
+        env:
+          # Сборка каталогом, а не одним файлом. Причина в QtWebEngine: он
+          # состоит из исполняемого файла-помощника и набора ресурсов,
+          # которые ищутся по путям относительно приложения. При сборке в
+          # один файл всё это распаковывается во временный каталог при
+          # каждом запуске — около 300 МБ и несколько секунд ожидания на
+          # пустом экране.
+          MYQUESTIFY_ONEDIR: '1'
+          # Отсутствие движка обрывает сборку: выпуск с весами и без движка
+          # снаружи неотличим от рабочего. На macOS такое уже случалось.
+          MYQUESTIFY_REQUIRE_LLM: '1'
+        run: pyinstaller MyQuestify.spec --noconfirm --clean
+
+      - name: Проверить состав сборки
+        # Две проверки по спискам состава. Первая — движок модели: без него
+        # выпуск с весами молча перешёл бы на заготовленные фразы. Вторая —
+        # помощник QtWebEngine: без него окно открывается пустым, и никакого
+        # сообщения об ошибке при этом не появляется.
+        run: |
+          set -euo pipefail
+
+          toc=$(find build -name 'Analysis-*.toc' | head -1)
+          if [[ -z "$toc" ]]; then
+            echo "::error::Не найден список состава сборки (Analysis-*.toc)."
+            exit 1
+          fi
+
+          grep -q "llama_cpp" "$toc" || {
+            echo "::error::В составе сборки нет модуля llama_cpp."
+            exit 1
+          }
+          grep -qE "llama[^']*\.so" "$toc" || {
+            echo "::error::В составе сборки нет нативных библиотек llama.cpp."
+            exit 1
+          }
+          echo "Движок модели в составе сборки: упоминаний $(grep -c llama "$toc")"
+
+          helper=$(find dist/MyQuestify -name 'QtWebEngineProcess*' | head -1)
+          if [[ -z "$helper" ]]; then
+            echo "::error::В сборке нет QtWebEngineProcess — окно осталось бы пустым."
+            exit 1
+          fi
+          echo "Помощник просмотра на месте: $helper"
+
+      - name: Проверить запуском на виртуальном экране
+        # Ради этого шага сборка и делается на машине GitHub: проверить
+        # выпуск для Linux вручную негде. Приложение запускается по-настоящему
+        # и должно ответить по своему адресу — это подтверждает, что окно
+        # создалось, сервер поднялся и страница отдаётся.
+        env:
+          # QtWebEngine запускает вспомогательный процесс в песочнице ядра.
+          # На машине сборки она недоступна, и без этой переменной запуск
+          # обрывается. У пользователя переменная не выставляется: там
+          # песочница работает и нужна.
+          QTWEBENGINE_DISABLE_SANDBOX: '1'
+          QTWEBENGINE_CHROMIUM_FLAGS: '--disable-gpu'
+        run: |
+          set -uo pipefail
+
+          # Данные пользователя уводятся в каталог сборки: проверка не должна
+          # зависеть от того, что осталось от прошлых запусков.
+          export XDG_DATA_HOME="$PWD/ci-home/share"
+          mkdir -p "$XDG_DATA_HOME"
+          LOG="$XDG_DATA_HOME/MyQuestify/myquestify.log"
+
+          xvfb-run -a --server-args='-screen 0 1280x900x24' \
+            ./dist/MyQuestify/MyQuestify &
+          RUNNER=$!
+
+          # Адрес не задан заранее: приложение занимает первый свободный порт
+          # и сообщает выбранный в журнале. Оттуда он и берётся.
+          URL=''
+          for _ in $(seq 1 60); do
+            sleep 2
+            if [ -f "$LOG" ]; then
+              URL=$(grep -o 'http://127\.0\.0\.1:[0-9]*' "$LOG" | tail -1 || true)
+            fi
+            [ -n "$URL" ] && break
+            kill -0 "$RUNNER" 2>/dev/null || break
+          done
+
+          if [ -z "$URL" ]; then
+            echo "::error::Приложение не сообщило адрес за две минуты."
+            echo "--- журнал ---"
+            cat "$LOG" 2>/dev/null || echo "(журнала нет — приложение не дошло до его создания)"
+            pkill -f 'dist/MyQuestify/MyQuestify' || true
+            exit 1
+          fi
+
+          echo "Приложение отвечает по адресу $URL"
+
+          CODE=$(curl --silent --output /tmp/page.html --write-out '%{http_code}' \
+                   --max-time 30 "$URL" || echo 000)
+          if [ "$CODE" != "200" ]; then
+            echo "::error::Главная страница вернула код $CODE."
+            cat "$LOG" 2>/dev/null || true
+            pkill -f 'dist/MyQuestify/MyQuestify' || true
+            exit 1
+          fi
+
+          # Код 200 отдаёт и страница с сообщением об ошибке. Проверяется,
+          # что пришёл именно интерфейс.
+          grep -q 'MyQuestify' /tmp/page.html || {
+            echo "::error::По адресу отвечает не интерфейс приложения."
+            head -40 /tmp/page.html
+            pkill -f 'dist/MyQuestify/MyQuestify' || true
+            exit 1
+          }
+
+          # Окно могло открыться и тут же закрыться: проверяется, что процесс
+          # жив спустя время, достаточное для отказа оболочки.
+          sleep 10
+          if ! pgrep -f 'dist/MyQuestify/MyQuestify' >/dev/null; then
+            echo "::error::Приложение завершилось само вскоре после запуска."
+            cat "$LOG" 2>/dev/null || true
+            exit 1
+          fi
+
+          echo "Запуск подтверждён: сервер ответил, процесс жив."
+          echo "--- журнал запуска ---"
+          cat "$LOG" 2>/dev/null || true
+
+          pkill -f 'dist/MyQuestify/MyQuestify' || true
+          wait "$RUNNER" 2>/dev/null || true
+
+      - name: Упаковать выпуск
+        run: |
+          set -euo pipefail
+
+          VERSION="${{ steps.version.outputs.value }}"
+
+          cp packaging/linux/install.sh dist/MyQuestify/
+          chmod +x dist/MyQuestify/install.sh dist/MyQuestify/MyQuestify
+          cp assets/icon.png dist/MyQuestify/icon.png
+
+          cat > dist/MyQuestify/README.txt <<'EOF'
+          MyQuestify — задачи как приключение
+
+          Установка не требуется. Запустите файл MyQuestify в этом каталоге.
+
+          Чтобы приложение появилось в меню, выполните ./install.sh — права
+          администратора не нужны, ярлык ставится в домашний каталог.
+
+          Данные хранятся локально, в каталоге MyQuestify внутри
+          ~/.local/share. Сетевых обращений приложение не делает.
+
+          Языковая модель подключается отдельно; выпуск с пометкой
+          with-model уже несёт её внутри. Подробности — в docs/MODEL.md
+          в репозитории проекта.
+          EOF
+
+          tar -czf "dist/MyQuestify-${VERSION}-linux-x86_64.tar.gz" \
+            -C dist MyQuestify
+
+          SIZE_MB=$(( $(stat -c%s "dist/MyQuestify-${VERSION}-linux-x86_64.tar.gz") / 1024 / 1024 ))
+          echo "Собрано: MyQuestify-${VERSION}-linux-x86_64.tar.gz — ${SIZE_MB} МБ"
+
+      - name: Загрузить веса модели
+        uses: ./.github/actions/fetch-model
+        with:
+          target-dir: models
+
+      - name: Собрать выпуск с моделью
+        run: |
+          set -euo pipefail
+
+          VERSION="${{ steps.version.outputs.value }}"
+
+          # Веса кладутся рядом с приложением, а не внутрь него: приложение
+          # переносит файл в свой каталог данных однократно, при первом
+          # открытии.
+          mkdir -p dist/MyQuestify/models
+          cp models/model.gguf dist/MyQuestify/models/model.gguf
+
+          ARCHIVE="dist/MyQuestify-${VERSION}-linux-x86_64-with-model.tar.gz"
+          tar -czf "$ARCHIVE" -C dist MyQuestify
+
+          SIZE_MB=$(( $(stat -c%s "$ARCHIVE") / 1024 / 1024 ))
+          echo "Собрано: $ARCHIVE — ${SIZE_MB} МБ"
+
+          # Предел вложения к выпуску — два гигабайта. Проверка здесь
+          # избавляет от отказа на шаге публикации, когда время уже
+          # потрачено на сборку и упаковку.
+          if [ "$SIZE_MB" -gt 1900 ]; then
+            echo "::error::Архив превышает предел вложения: ${SIZE_MB} МБ"
+            exit 1
+          fi
+
+      - name: Приложить к сборке
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-tar
+          path: dist/*.tar.gz
+          retention-days: 90
+
+      - name: Приложить к выпуску
+        # Только для меток: ручной запуск оставляет файлы вложением сборки,
+        # не создавая выпуска. Описание выпуска составляет сборка для
+        # Windows — она же создаёт сам выпуск, если его ещё нет.
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.tar.gz
+          fail_on_unmatched_files: true

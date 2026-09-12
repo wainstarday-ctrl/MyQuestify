@@ -121,6 +121,20 @@ hiddenimports = [
 
 if sys.platform.startswith("win"):
     hiddenimports.append("winreg")
+elif sys.platform.startswith("linux"):
+    # На Linux и оболочка окна, и значок в трее выбирают реализацию строкой
+    # во время выполнения: статический анализ их не видит, и без явного
+    # перечисления собранное приложение запустилось бы без окна.
+    hiddenimports += [
+        "webview.platforms.qt",
+        "qtpy",
+        "PyQt5.QtWebEngineWidgets",
+        "PyQt5.QtWebEngineCore",
+        # pystray перебирает оболочки рабочего стола: строка состояния
+        # GNOME даётся через AppIndicator, прочие — через X11.
+        "pystray._appindicator",
+        "pystray._xorg",
+    ]
 
 # --------------------------------------------------------------------------- #
 # Опциональная локальная модель
