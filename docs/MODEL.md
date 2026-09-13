@@ -47,11 +47,18 @@ LLM_TEMPERATURE: Final[float] = 0.3
 | Режим запуска | Путь |
 |---|---|
 | `python run.py` | `<корень проекта>\models\model.gguf` |
-| `MyQuestify.exe` | `%LOCALAPPDATA%\MyQuestify\models\model.gguf` |
+| `MyQuestify.exe` (Windows) | `%LOCALAPPDATA%\MyQuestify\models\model.gguf` |
+| `MyQuestify.app` (macOS) | `~/Library/Application Support/MyQuestify/models/model.gguf` |
+| `MyQuestify` (Linux) | `~/.local/share/MyQuestify/models/model.gguf` |
 
-Каталог создаётся при первом запуске. Внутри `.exe` этого каталога нет:
-PyInstaller распаковывает ресурсы во временную папку, доступную только на
-чтение и стираемую при выходе.
+Каталог создаётся при первом запуске. Внутри собранного приложения его
+нет: PyInstaller распаковывает ресурсы во временную папку, доступную
+только на чтение и стираемую при выходе. Поэтому веса кладутся в каталог
+данных пользователя, а не рядом с исполняемым файлом.
+
+В выпусках «с моделью» файл уже лежит рядом с приложением, и оно
+переносит его в каталог данных при первом запуске — класть ничего не
+нужно.
 
 ---
 
