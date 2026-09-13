@@ -137,8 +137,8 @@
                en: 'Laboratory of Ideas' },
       tagline: { ru: 'Смешивай — получится третье',
                  en: 'Mix two and get a third' },
-      description: { ru: 'Колбы с растворами на лабораторном столе. Возьми любую, наклони клавишами поворота — жидкость польётся. Попадёт в другую колбу — цвета смешаются.',
-                     en: 'Flasks of reagents on a lab bench. Pick one up, tilt it with the rotation keys and pour. Hit another flask and the reagents react.' } }
+      description: { ru: 'Колбы с растворами на лабораторном столе. Возьми любую и наклони — жидкость польётся. Попадёт в другую колбу — цвета смешаются.',
+                     en: 'Flasks of reagents on a lab bench. Pick one up, tilt it and pour. Hit another flask and the reagents react.' } }
   ];
 
   /**

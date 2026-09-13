@@ -115,7 +115,7 @@
       'sky.рассвет': 'DAWN',
       'sky.день': 'DAY',
       'sky.закат': 'DUSK',
-      'hint.lab': 'Pick up a flask and tilt it with the rotation keys. Pour into a neighbour and the reagents react.',
+      'hint.lab': 'Pick up a flask and tilt it. Pour into a neighbour and the reagents react.',
 
       // Подписи, которые сцены рисуют прямо на холсте.
       'scene.fuel': 'FUEL',
