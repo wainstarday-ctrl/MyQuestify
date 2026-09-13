@@ -1,0 +1,3 @@
+Fixed planet names in the Orbits of Intent scene: in the English version a planet moved to another orbit took over that orbit's name.
+
+The app's permission set is now checked against an approved list on every build: there is no network access in it, and none can appear unnoticed.

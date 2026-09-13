@@ -1,0 +1,27 @@
+MyQuestify is a task tracker built like a game. The hours you estimate for a task turn into in-app currency, and that currency unlocks interactive scenes you can play with while thinking about your next step.
+
+The app runs entirely on your device. It does not ask for network access: there is nothing to reach out to. A build will fail if network access ever appears in it — the permission set is checked against an approved list on every release.
+
+WHAT IS INSIDE
+
+• Quests with priorities and deadlines. Priority sets the reward multiplier. Missing a deadline costs half the reward, but you can still finish late: forbidding it would punish exactly the behaviour the app should encourage.
+
+• Thought chains — breaking a task into a tree of steps of any depth. Two views: a nested outline and a web graph whose nodes you can drag around.
+
+• Ten interactive scenes on a custom rendering engine: a garden with falling fruit, a volcano with flowing lava, meshed gears, a solar system, a pond with waves, a desk with scattered objects, an elastic net, a campfire with a burn model, storm clouds, and a chemistry lab with eight reactions. Scenes unlock with earned currency; locked ones can be previewed for free.
+
+• A deadline calendar and monthly summaries.
+
+• Deadline reminders arrive while the app is closed.
+
+• Two interface languages, light and dark themes.
+
+ABOUT THE LANGUAGE MODEL
+
+The app includes an Oracle — a companion that helps you break a task down. This build ships without a language model, so it replies with prepared phrases. A separate release carrying a 0.5B model that runs on the device is available on the project releases page; it needs 4 GB of RAM or more.
+
+DATA
+
+Everything stays on the device and is never sent anywhere. No analytics, no Google services: their absence is verified at build time.
+
+Open source, MIT licence.
