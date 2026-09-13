@@ -46,6 +46,55 @@
       global.Capacitor.Plugins.LocalNotifications;
   }
 
+  /** Текущее состояние доставки — для вызывающей стороны. */
+  function status() {
+    return {
+      mode: mode,
+      granted: granted,
+      // Собрано ли приложение оболочкой. Настольная версия показывает
+      // напоминания через значок в области уведомлений, и согласовывать
+      // переключатель с разрешением системы там не нужно.
+      shell: mode === 'capacitor'
+    };
+  }
+
+  /**
+   * Определяет способ доставки и уже выданное разрешение, ничего не спрашивая.
+   *
+   * Вызывается при запуске. Без этого шага модуль до первого нажатия на
+   * переключатель считал, что разрешения нет, и молча отказывался назначать
+   * напоминания — при включённой настройке и выданном разрешении не приходило
+   * ни одного сообщения.
+   *
+   * @returns {Promise<{mode: string, granted: boolean, shell: boolean}>}
+   */
+  function init() {
+    var api = plugin();
+
+    if (api) {
+      mode = 'capacitor';
+      // Проверка, а не запрос: окно системы, показанное при запуске без
+      // объяснения причины, отклоняют, и вернуть разрешение потом можно
+      // только через настройки устройства.
+      return api.checkPermissions()
+        .then(function (result) {
+          granted = result && result.display === 'granted';
+          return status();
+        })
+        .catch(function () { granted = false; return status(); });
+    }
+
+    if (global.Notification) {
+      mode = 'web';
+      granted = global.Notification.permission === 'granted';
+      return Promise.resolve(status());
+    }
+
+    mode = 'none';
+    granted = false;
+    return Promise.resolve(status());
+  }
+
   /**
    * Запрашивает разрешение на показ сообщений.
    *
@@ -112,6 +161,15 @@
   }
 
   global.MobileNotify = {
+    /**
+     * Согласует модуль с состоянием системы, ничего не спрашивая.
+     * @returns {Promise<{mode: string, granted: boolean, shell: boolean}>}
+     */
+    init: init,
+
+    /** Способ доставки и разрешение на текущий момент. */
+    status: status,
+
     /**
      * Включает напоминания, спросив разрешение.
      * @returns {Promise<boolean>} получено ли разрешение
