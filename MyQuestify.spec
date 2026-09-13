@@ -128,8 +128,10 @@ elif sys.platform.startswith("linux"):
     hiddenimports += [
         "webview.platforms.qt",
         "qtpy",
-        "PyQt5.QtWebEngineWidgets",
-        "PyQt5.QtWebEngineCore",
+        "PySide6.QtWebEngineWidgets",
+        "PySide6.QtWebEngineCore",
+        "PySide6.QtWebChannel",
+        "PySide6.QtNetwork",
         # pystray перебирает оболочки рабочего стола: строка состояния
         # GNOME даётся через AppIndicator, прочие — через X11.
         "pystray._appindicator",

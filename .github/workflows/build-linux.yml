@@ -26,6 +26,10 @@ permissions:
 
 env:
   PYTHONIOENCODING: utf-8
+  # qtpy выбирает привязку Qt по тому, что найдёт установленным. Выбор
+  # задаётся явно: случайно затесавшийся в окружение PyQt увёл бы сборку
+  # под GPL-3.0, несовместимую с лицензией MIT этого проекта.
+  QT_API: pyside6
 
 jobs:
   build:
@@ -130,6 +134,7 @@ jobs:
             libxcb-shape0 \
             libxcb-xinerama0 \
             libxcb-xfixes0 \
+            libxcb-cursor0 \
             libxcomposite1 \
             libxdamage1 \
             libxrandr2 \
