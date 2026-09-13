@@ -1,0 +1,3 @@
+Deadline reminders never arrived: the system permission was only checked when the reminders switch was tapped, and it is on by default. The permission is now checked at startup and the schedule is handed to the system right away.
+
+The reminders switch now reflects reality: without the system permission it shows as off, and tapping it asks for the permission.
