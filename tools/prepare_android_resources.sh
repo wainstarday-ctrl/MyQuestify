@@ -73,9 +73,74 @@ add_permission() {
     echo "добавлено: $NAME"
 }
 
+# INTERNET. Его объявляет шаблон оболочки при создании проекта — на всякий
+# случай, для приложений, которые обращаются к своей серверной части. Наше
+# не обращается: страница отдаётся перехватчиком из файлов приложения, и до
+# сетевого стека запрос не доходит. Оставленное разрешение ничего не ломает,
+# но видно в карточке каталога и делает утверждение «данные не покидают
+# устройство» непроверяемым: приложение с доступом в сеть может им
+# воспользоваться, и верить приходится на слово.
+#
+# Поэтому разрешение удаляется дважды. Строка шаблона убирается, а вместо
+# неё вставляется правило слияния tools:node="remove": оно отменяет и то
+# объявление, которое придёт из манифеста подключённой библиотеки. Одного
+# удаления строки не хватило бы — слияние вернуло бы разрешение обратно.
+
+ensure_tools_namespace() {
+    if grep -q 'xmlns:tools=' "$MANIFEST"; then
+        return
+    fi
+
+    # Пространство имён объявляется на корневом теге; без него правило
+    # слияния оборвёт сборку Gradle с невнятной ошибкой разбора.
+    sed -i '0,/<manifest /s|<manifest |<manifest xmlns:tools="http://schemas.android.com/tools" |' "$MANIFEST"
+
+    grep -q 'xmlns:tools=' "$MANIFEST" \
+        || { echo "::error::Не удалось объявить пространство имён tools"; exit 1; }
+}
+
+remove_permission() {
+    local NAME="$1"
+
+    ensure_tools_namespace
+
+    # Сначала снимаются все прежние упоминания, затем ставится одно
+    # правило: иначе повторный запуск накапливал бы дубликаты.
+    sed -i "\|android.permission.$NAME|d" "$MANIFEST"
+
+    awk -v perm="$NAME" '
+        /<\/manifest>/ && !done {
+            print "    <uses-permission android:name=\"android.permission." perm "\" tools:node=\"remove\" />"
+            done = 1
+        }
+        { print }
+    ' "$MANIFEST" > "$MANIFEST.new"
+
+    mv "$MANIFEST.new" "$MANIFEST"
+
+    # Проверяется не наличие строки, а её вид: объявление без правила
+    # слияния означало бы, что разрешение осталось.
+    local KEPT
+    KEPT=$(grep -c "android.permission.$NAME" "$MANIFEST" || true)
+    if [ "$KEPT" != "1" ]; then
+        echo "::error::После удаления $NAME в манифесте $KEPT упоминаний вместо одного"
+        exit 1
+    fi
+    grep -q "android.permission.$NAME\" tools:node=\"remove\"" "$MANIFEST" \
+        || { echo "::error::Правило удаления $NAME не встало"; exit 1; }
+
+    echo "удалено: $NAME"
+}
+
 echo "— разрешения —"
 add_permission SCHEDULE_EXACT_ALARM
 add_permission RECEIVE_BOOT_COMPLETED
+remove_permission INTERNET
+
+# Итоговый вид манифеста в журнале: при разборе неудачной сборки это первое,
+# что хочется увидеть, и искать его среди промежуточных файлов не придётся.
+echo "— объявления в манифесте —"
+grep 'uses-permission' "$MANIFEST" || echo "(ни одного)"
 
 # --- Значок строки состояния -------------------------------------------
 #
