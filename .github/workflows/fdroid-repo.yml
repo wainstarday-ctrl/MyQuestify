@@ -1,0 +1,226 @@
+# Собственный репозиторий F-Droid на страницах GitHub.
+#
+# Готовые приложения берутся из выпусков этого же репозитория — там они уже
+# собраны и подписаны ключом выпуска. Здесь они только описываются и
+# складываются в подписанный индекс, чтобы клиент F-Droid на устройстве сам
+# находил обновления.
+#
+# Индекс подписывается отдельным ключом (myquestify-repo.jks), не тем,
+# которым подписано приложение. Роли разные: ключ приложения удостоверяет,
+# что новая версия от того же автора; ключ репозитория — что перечень
+# приложений не подменён по дороге.
+#
+# Нужные секреты (Settings → Secrets and variables → Actions):
+#   FDROID_KEYSTORE_BASE64    — base64 от myquestify-repo.jks
+#   FDROID_KEYSTORE_PASSWORD  — пароль этого хранилища
+#   FDROID_KEY_ALIAS          — псевдоним ключа репозитория (repo)
+#   RELEASE_CERT_SHA256       — уже есть, используется сборкой Android
+#
+# Перед первым запуском: Settings → Pages → Source → GitHub Actions.
+
+name: Репозиторий F-Droid
+
+on:
+  workflow_dispatch:
+  release:
+    types: [published]
+  schedule:
+    # Раз в сутки — чтобы новый выпуск подхватывался сам.
+    - cron: '17 4 * * *'
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+env:
+  APP_ID: com.myquestify.app
+  # Выпуск с моделью весит сотни мегабайт. По умолчанию в репозиторий
+  # попадает только базовое приложение; "1" включает оба.
+  INCLUDE_FULL: "0"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Забрать исходники (нужны описания fastlane)
+        uses: actions/checkout@v4
+
+      - name: Поставить fdroidserver
+        run: |
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
+            fdroidserver apksigner
+          fdroid --version
+
+      - name: Собрать репозиторий
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FDROID_KEYSTORE_BASE64: ${{ secrets.FDROID_KEYSTORE_BASE64 }}
+          FDROID_KEYSTORE_PASSWORD: ${{ secrets.FDROID_KEYSTORE_PASSWORD }}
+          FDROID_KEY_ALIAS: ${{ secrets.FDROID_KEY_ALIAS }}
+          CERT_SHA256: ${{ secrets.RELEASE_CERT_SHA256 }}
+        run: |
+          set -euo pipefail
+
+          # Рабочий каталог вне public: туда попадает ключ и config.yml с
+          # паролем, публиковать их нельзя.
+          WORK="$RUNNER_TEMP/fdroid"
+          mkdir -p "$WORK/repo" "$WORK/metadata"
+
+          REPO_URL="https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/fdroid/repo"
+
+          # --- 1. Ключ подписи индекса ---------------------------------
+          printf '%s' "$FDROID_KEYSTORE_BASE64" | tr -d '\r\n ' | base64 -d > "$WORK/repo-key.jks"
+          chmod 600 "$WORK/repo-key.jks"
+
+          # --- 2. Приложения из последнего выпуска ----------------------
+          TAG=$(gh release view --json tagName --jq .tagName)
+          echo "Последний выпуск: $TAG"
+
+          gh release view "$TAG" --json assets --jq '.assets[].name' \
+            | grep '\.apk$' > "$WORK/names.txt" || true
+
+          while read -r NAME; do
+            [ -n "$NAME" ] || continue
+            case "$NAME" in
+              *full*|*model*)
+                if [ "$INCLUDE_FULL" != "1" ]; then
+                  echo "  пропускаю $NAME (сборка с моделью)"
+                  continue
+                fi
+                ;;
+            esac
+            echo "  качаю $NAME"
+            gh release download "$TAG" --pattern "$NAME" --dir "$WORK/repo"
+          done < "$WORK/names.txt"
+
+          if ! ls "$WORK"/repo/*.apk >/dev/null 2>&1; then
+            echo "В выпуске $TAG нет подходящих APK." >&2
+            exit 1
+          fi
+
+          # --- 3. Описания из fastlane ----------------------------------
+          for LOC in ru en-US; do
+            SRC="fastlane/metadata/android/$LOC"
+            DST="$WORK/repo/$APP_ID/$LOC"
+            if [ ! -d "$SRC" ]; then
+              echo "  нет описаний для $LOC"
+              continue
+            fi
+            mkdir -p "$DST"
+            for F in title.txt short_description.txt full_description.txt; do
+              if [ -f "$SRC/$F" ]; then cp "$SRC/$F" "$DST/$F"; fi
+            done
+            if [ -f "$SRC/images/icon.png" ]; then cp "$SRC/images/icon.png" "$DST/icon.png"; fi
+            if [ -f "$SRC/images/featureGraphic.png" ]; then cp "$SRC/images/featureGraphic.png" "$DST/featureGraphic.png"; fi
+            if [ -d "$SRC/images/phoneScreenshots" ]; then
+              mkdir -p "$DST/phoneScreenshots"
+              cp "$SRC"/images/phoneScreenshots/*.png "$DST/phoneScreenshots/"
+            fi
+            if [ -d "$SRC/changelogs" ]; then
+              mkdir -p "$DST/changelogs"
+              cp "$SRC"/changelogs/*.txt "$DST/changelogs/"
+            fi
+            echo "  описания $LOC разложены"
+          done
+
+          if [ "$INCLUDE_FULL" = "1" ] && [ -d "$WORK/repo/$APP_ID" ]; then
+            cp -r "$WORK/repo/$APP_ID" "$WORK/repo/$APP_ID.full"
+          fi
+
+          # --- 4. Описание приложения для F-Droid -----------------------
+          write_metadata() {
+            cat > "$WORK/metadata/$1.yml" <<YML
+          Categories:
+            - Time
+          License: MIT
+          AuthorName: wainstarday
+          SourceCode: https://github.com/${{ github.repository }}
+          IssueTracker: https://github.com/${{ github.repository }}/issues
+          Changelog: https://github.com/${{ github.repository }}/releases
+          AllowedAPKSigningKeys:
+            - $CERT_SHA256
+          YML
+            sed -i 's/^          //' "$WORK/metadata/$1.yml"
+          }
+          write_metadata "$APP_ID"
+          if [ "$INCLUDE_FULL" = "1" ]; then write_metadata "$APP_ID.full"; fi
+
+          # --- 5. Настройки fdroidserver --------------------------------
+          cat > "$WORK/config.yml" <<YML
+          repo_url: $REPO_URL
+          repo_name: MyQuestify
+          repo_description: >-
+            Собственный репозиторий MyQuestify — игровой учёт задач,
+            работающий целиком без сети.
+          archive_older: 0
+          keystore: $WORK/repo-key.jks
+          repo_keyalias: $FDROID_KEY_ALIAS
+          keystorepass: $FDROID_KEYSTORE_PASSWORD
+          keypass: $FDROID_KEYSTORE_PASSWORD
+          YML
+          sed -i 's/^          //' "$WORK/config.yml"
+          chmod 600 "$WORK/config.yml"
+
+          # --- 6. Сборка и подпись индекса ------------------------------
+          ( cd "$WORK" && fdroid update --pretty --verbose )
+
+          # --- 7. Выкладка: в public уходит только repo ------------------
+          rm -rf public
+          mkdir -p public/fdroid
+          cp -r "$WORK/repo" public/fdroid/repo
+
+          cat > public/index.html <<HTML
+          <!doctype html>
+          <html lang="ru">
+          <meta charset="utf-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1">
+          <title>Репозиторий F-Droid — MyQuestify</title>
+          <style>
+            body { margin: 0; padding: 2rem 1.25rem; background: #121212; color: #e8e8e8;
+                   font: 16px/1.6 system-ui, sans-serif; }
+            main { max-width: 42rem; margin: 0 auto; }
+            h1 { color: #10b981; font-size: 1.6rem; }
+            code { display: block; margin: 1rem 0; padding: .9rem 1rem; background: #1c1c1c;
+                   border: 1px solid #2e2e2e; border-radius: .6rem; word-break: break-all; }
+            a { color: #8b5cf6; }
+          </style>
+          <main>
+            <h1>MyQuestify в F-Droid</h1>
+            <p>Добавьте этот адрес в клиенте F-Droid: «Параметры» → «Репозитории» → «+».</p>
+            <code>$REPO_URL</code>
+            <p>После добавления MyQuestify появится в поиске, а обновления будут
+               приходить сами.</p>
+            <p>Исходный код и выпуски —
+               <a href="https://github.com/${{ github.repository }}">github.com/${{ github.repository }}</a>.</p>
+          </main>
+          </html>
+          HTML
+          sed -i 's/^          //' public/index.html
+
+          echo
+          echo "================================================================"
+          echo "  Адрес репозитория для клиента F-Droid:"
+          echo "  $REPO_URL"
+          echo "================================================================"
+
+      - name: Подготовить страницы
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: public
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Опубликовать
+        id: deployment
+        uses: actions/deploy-pages@v4
