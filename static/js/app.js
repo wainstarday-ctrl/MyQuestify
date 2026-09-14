@@ -800,6 +800,19 @@
    * Настольной версии это не касается: там сообщения показывает значок в
    * области уведомлений, и разрешение системы ни при чём.
    */
+  function remindersWorking(settings) {
+    var wanted = settings ? settings.notifications_enabled !== false : true;
+
+    if (!window.MobileNotify) { return wanted; }
+
+    var delivery = window.MobileNotify.status();
+    // Настольная версия показывает сообщения значком в области уведомлений,
+    // и разрешение системы там ни при чём.
+    if (!delivery.shell) { return wanted; }
+
+    return wanted && delivery.granted;
+  }
+
   function initReminders() {
     if (!window.MobileNotify) { return; }
 
@@ -1408,7 +1421,11 @@
       }
     );
 
-    dom.notifyToggle.checked = settings.notifications_enabled;
+    // Не просто настройка: положение переключателя означает «напоминания
+    // работают». Настройки применяются заново при каждом сохранении — смена
+    // языка в том числе, — и без этой проверки переключатель возвращался в
+    // включённое состояние, хотя разрешения на устройстве так и не было.
+    dom.notifyToggle.checked = remindersWorking(settings);
     dom.notifyLead.value = settings.notify_lead_minutes;
     dom.motionToggle.checked = settings.reduce_motion;
     dom.hintsToggle.checked = settings.show_hints !== false;
