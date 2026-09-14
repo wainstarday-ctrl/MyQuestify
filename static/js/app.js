@@ -2484,8 +2484,20 @@
    * напоминания — сработать. Состояние приводится в соответствие
    * действительности без перезапуска.
    */
-  function handleResume() {
-    api.sweepOverdue().then(function (sweep) {
+  /**
+   * Проверяет просрочку и показывает итог.
+   *
+   * Одна процедура на все случаи: запуск, возвращение к свёрнутому окну и
+   * повторная проверка по времени. Разные копии этого кода со временем
+   * разошлись бы, а списание токенов — не то место, где расхождения заметны
+   * сразу.
+   */
+  // Четверть часа отсрочки перед штрафом задаёт и шаг проверки: чаще незачем,
+  // реже — и отсрочка растянулась бы вдвое.
+  var SWEEP_INTERVAL_MS = 5 * 60 * 1000;
+
+  function runOverdueSweep() {
+    return api.sweepOverdue().then(function (sweep) {
       if (sweep && sweep.failed && sweep.failed.length) {
         renderTokens(sweep.focus_tokens);
         toast(
@@ -2493,7 +2505,17 @@
           '. ' + sweep.tokens_lost + ' FT ' + t('toast.overdueTail', 'списано.'),
           'error'
         );
+        return true;
       }
+      return false;
+    }).catch(function () {
+      // Проверка не критична: список всё равно загрузится.
+      return false;
+    });
+  }
+
+  function handleResume() {
+    runOverdueSweep().then(function () {
       return api.listTasks();
     }).then(function (tasks) {
       state.tasks = tasks;
@@ -2611,18 +2633,30 @@
     // Просрочка проверяется до загрузки списка: пока приложение было
     // закрыто, сроки могли пройти, и пользователь должен увидеть это сразу,
     // а не после первого же обновления.
-    api.sweepOverdue().then(function (sweep) {
-      if (sweep && sweep.failed && sweep.failed.length) {
-        renderTokens(sweep.focus_tokens);
-        toast(
-          t('toast.overdue', 'Просрочено квестов:') + ' ' + sweep.failed.length +
-          '. ' + sweep.tokens_lost + ' FT ' + t('toast.overdueTail', 'списано.'),
-          'error'
-        );
-      }
-    }).catch(function () {
-      /* проверка не критична: список всё равно загрузится */
-    });
+    runOverdueSweep();
+
+    // И дальше — по времени, пока окно открыто. Прежде проверка случалась
+    // только при запуске и при возвращении к свёрнутому окну: приложение,
+    // открытое сутки подряд, срок «на глазах» не замечало. Пометка
+    // «просрочена» появлялась, а токены списывались лишь после перезапуска,
+    // и выглядело это как неработающее правило.
+    //
+    // Если проверка что-то изменила, список перечитывается: сама по себе она
+    // обновляет только счётчик токенов, и карточка осталась бы на экране в
+    // прежнем виде — со старым состоянием и наградой, которой уже нет.
+    setInterval(function () {
+      runOverdueSweep().then(function (changed) {
+        if (!changed) { return null; }
+
+        return api.listTasks().then(function (tasks) {
+          state.tasks = tasks;
+          renderTasks();
+          return reloadProgress();
+        });
+      }).catch(function () {
+        /* список обновится при следующей проверке */
+      });
+    }, SWEEP_INTERVAL_MS);
 
     Promise.all([api.listTasks(), api.getGarden()])
       .then(function (results) {
