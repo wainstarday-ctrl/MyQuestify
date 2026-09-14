@@ -1,0 +1,3 @@
+The "Rotation keys" setting is no longer shown on phones: the touch-device check ran too late, so the setting stayed visible and promised controls that do not exist. For the same reason the on-screen rotation buttons could fail to appear in scenes.
+
+Hints in the Laboratory no longer mention keys: they show the on-screen button symbols instead.
