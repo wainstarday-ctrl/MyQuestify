@@ -1,0 +1,3 @@
+The loading screen always appeared in Russian: the note holding the chosen language did not survive closing the app. Desktop builds only.
+
+The reminders switch turned itself back on when the language changed, even without notification permission. Its position now always means whether reminders work or not.
