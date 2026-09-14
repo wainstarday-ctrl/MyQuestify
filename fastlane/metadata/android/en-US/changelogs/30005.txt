@@ -1,0 +1,3 @@
+No reminder arrived when a deadline was closer than the lead time: the reminder moment was computed an hour before the deadline and landed in the past. It now arrives right away instead.
+
+The reminder text states the real time left rather than the lead time from settings.
