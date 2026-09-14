@@ -150,17 +150,26 @@
    * @returns {{title: string, body: string}}
    */
   function compose(task, minutes, language) {
+    // Запас пересчитывается в часы только когда он им измеряется. При сроке
+    // через десять минут сообщение «осталось около 1 ч» вводило бы в
+    // заблуждение именно тогда, когда точность важнее всего.
+    var soon = minutes < 60;
     var hours = Math.max(1, Math.round(minutes / 60));
+    var left = Math.max(1, Math.round(minutes));
 
     if (language === 'en') {
       return {
         title: 'Deadline near: ' + task.title.slice(0, 48),
-        body: 'About ' + hours + ' h left. One honest step is still enough.'
+        body: soon
+          ? 'About ' + left + ' min left. One honest step is still enough.'
+          : 'About ' + hours + ' h left. One honest step is still enough.'
       };
     }
     return {
       title: 'Срок близко: ' + task.title.slice(0, 48),
-      body: 'Осталось около ' + hours + ' ч. Одного честного шага ещё хватит.'
+      body: soon
+        ? 'Осталось около ' + left + ' мин. Одного честного шага ещё хватит.'
+        : 'Осталось около ' + hours + ' ч. Одного честного шага ещё хватит.'
     };
   }
 
@@ -208,10 +217,13 @@
       var pending = (tasks || [])
         .filter(function (task) {
           if (!active || task.status !== 'pending' || !task.deadline) { return false; }
-          var moment = new Date(task.deadline).getTime() - lead * 60000;
-          // Прошедшие моменты система отвергает, поэтому отсеиваются здесь:
-          // иначе плагин вернул бы ошибку на весь пакет целиком.
-          return moment > Date.now();
+          // Отсеивается не прошедший момент напоминания, а прошедший срок.
+          // Прежде здесь стояла проверка момента, и квест со сроком ближе
+          // запаса — «сдать через десять минут» при запасе в час — не получал
+          // напоминания вовсе: рассчитанный момент оказывался в прошлом.
+          // Молчание приходилось ровно на тот случай, когда напоминание
+          // нужнее всего.
+          return new Date(task.deadline).getTime() > Date.now();
         })
         .sort(function (a, b) { return a.deadline < b.deadline ? -1 : 1; })
         .slice(0, MAX_SCHEDULED);
@@ -234,8 +246,19 @@
           if (!pending.length) { return 0; }
 
           var list = pending.map(function (task) {
-            var moment = new Date(new Date(task.deadline).getTime() - lead * 60000);
-            var text = compose(task, lead, language);
+            var due = new Date(task.deadline).getTime();
+            var planned = due - lead * 60000;
+
+            // Если рассчитанный момент уже прошёл, напоминание переносится на
+            // ближайшее будущее: несколько секунд нужны, чтобы система приняла
+            // запись — прошедшее время она отвергает.
+            var soon = planned <= Date.now();
+            var moment = new Date(soon ? Date.now() + 15000 : planned);
+
+            // В тексте указывается настоящий остаток, а не запас из настроек:
+            // иначе сообщение, пришедшее за пять минут до срока, обещало бы час.
+            var left = Math.round((due - moment.getTime()) / 60000);
+            var text = compose(task, soon ? left : lead, language);
             return {
               id: ID_BASE + task.id,
               title: text.title,
